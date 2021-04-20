@@ -4,7 +4,9 @@
 
 标注文件为yolo格式
 
+> ```
 > <object-class> <x> <y> <width> <height>
+> ```
 >
 > Where `x`, `y`, `width`, and `height` are relative to the image's width and height
 
