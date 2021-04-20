@@ -2,6 +2,12 @@
 
 支持系统：windows, 目前linux和Mac系统右键相关操作无法正常使用
 
+标注文件为yolo格式
+
+> <object-class> <x> <y> <width> <height>
+>
+> Where `x`, `y`, `width`, and `height` are relative to the image's width and height
+
 ## 安装依赖
 
 ```shell
@@ -41,7 +47,7 @@ python labeled_tool.py -c voc.json
 
   * Backspace: 切换到撤销模式
 
-  * 1~9: 切换类别label_id为 0~8(越界时为最大类别号)
+  * 1\~9: 切换类别label_id为 0\~8(越界时为最大类别号)
 
   * 0: 切换类别label_id为9(越界时为最大类别号)
 
