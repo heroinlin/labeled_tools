@@ -248,7 +248,8 @@ class CLabeled:
                     # 优先修改(中心点或左上点)距离当前鼠标最近的框的label_id
                     sort_indices = self._get_sort_indices(x, y)
                     change_idx = sort_indices[0]
-                self.boxes[change_idx][4] = self.label_index
+                label_id = self.class_table[self.label_index]
+                self.boxes[change_idx][4] = label_id
                 self._draw_box_on_image(self.current_image, self.boxes)
 
     # 对选择的框进行移动
@@ -496,9 +497,10 @@ class CLabeled:
                 self.current_label_index += 1
                 self.undo_boxes = []
                 continue
-            else:  # 其他按键
-                continue
-
+            # else:  # 其他按键
+            #     continue
+            self.current_label_index += 1
+            self.undo_boxes = []
 
 def parse_args():
     parser = argparse.ArgumentParser()
