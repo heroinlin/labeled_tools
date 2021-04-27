@@ -23,21 +23,21 @@ Author: Heroinlj
     Backspace: 切换到撤销模式
     1~9: 切换类别label_id为 0~8(越界时为最大类别号)
     0: 切换类别label_id为9(越界时为最大类别号)
-    Q: 向前切换类别
-    W: 向后切换类别
-    A: 上一张图片
-    D: 下一张图片
+    Q/↑: 向前切换类别
+    W/↓: 向后切换类别
+    A/←: 上一张图片
+    D/→: 下一张图片
     L: 删除当前图片和标注文件
 鼠标事件:
     标注模式:
         鼠标左键拖动进行目标框标注, 按下与松开分别对应左上点和右下点的位置
-        鼠标右键进行进行目标框类别label_id的切换, 切换离当前鼠标位置最近的框
+        Windows鼠标右键(Linux, Mac左键双击)进行进行目标框类别label_id的切换, 切换离当前鼠标位置最近的框
     删除模式:
-        鼠标右键删除目标框, 删除离当前鼠标位置最近的框 
+        Windows鼠标右键(Linux, Mac左键双击)删除目标框, 删除离当前鼠标位置最近的框 
     移动模式:
         鼠标左键拖动来移动目标框，移动离当前鼠标位置最近的框
     撤销模式:
-        鼠标右键撤销删除操作, 撤销对当前图片的一次删除操作
+        Windows鼠标右键(Linux, Mac左键双击)撤销删除操作, 撤销对当前图片的一次删除操作
 
 """
 ix, iy = -1, -1
@@ -240,7 +240,7 @@ class CLabeled:
         #     if len(self.boxes):
         #         del self.boxes[-1]
         #         self._draw_box_on_image(self.current_image, self.boxes)
-        elif event == cv2.EVENT_RBUTTONDOWN:  # 修改(中心点或左上点)距离当前鼠标最近的框的label_id
+        elif ("win32" in sys.platform and event == cv2.EVENT_RBUTTONDOWN) or ("darwin" in sys.platform or "linux" in sys.platform and event == cv2.EVENT_LBUTTONDBLCLK):  # 修改(中心点或左上点)距离当前鼠标最近的框的label_id
             self.current_image = self.image.copy()
             change_idx = 0
             if len(self.boxes):
@@ -260,6 +260,7 @@ class CLabeled:
         x, y = self._roi_limit(x, y)
         if event == cv2.EVENT_LBUTTONDOWN:  # 按下鼠标左键
             ix, iy = x, y
+            move_box = None
             self._update_win_image(dst)
             cv2.imshow(self.windows_name, self.win_image)
         elif event == cv2.EVENT_MOUSEMOVE and (flags and cv2.EVENT_FLAG_LBUTTON):
@@ -277,20 +278,22 @@ class CLabeled:
                 self._update_win_image(dst)
                 cv2.imshow(self.windows_name, self.win_image)
         elif event == cv2.EVENT_LBUTTONUP:  # 鼠标左键松开
-            label_idx = self.boxes[self.move_idx][4]
-            del self.boxes[self.move_idx]
-            x1, y1, x2, y2 = self._move_delta_limit(x - ix, y - iy, move_box)
-            self.boxes.append(
-                            [x1/self.width, y1/self.height, x2/self.width, y2/self.height, label_idx])
-            self._draw_box_on_image(self.image.copy(), self.boxes)
-            self.move_idx = -1
+            if move_box is not None:
+                label_idx = self.boxes[self.move_idx][4]
+                del self.boxes[self.move_idx]
+                x1, y1, x2, y2 = self._move_delta_limit(x - ix, y - iy, move_box)
+                self.boxes.append(
+                                [x1/self.width, y1/self.height, x2/self.width, y2/self.height, label_idx])
+                self._draw_box_on_image(self.image.copy(), self.boxes)
+                self.move_idx = -1
+                move_box = None
 
     # 对选择的框进行删除
     def _delete_roi(self, event, x, y, flags, param):
         dst = self.image.copy()
         self._draw_box_on_image(dst, self.boxes)
         x, y = self._roi_limit(x, y)
-        if event == cv2.EVENT_RBUTTONDOWN:  # 删除(中心点或左上点)距离当前鼠标最近的框
+        if ("win32" in sys.platform and event == cv2.EVENT_RBUTTONDOWN) or ("darwin" in sys.platform or "linux" in sys.platform and event == cv2.EVENT_LBUTTONDBLCLK):  # 删除(中心点或左上点)距离当前鼠标最近的框
             self.current_image = self.image.copy()
             del_index = 0
             if len(self.boxes):
@@ -307,7 +310,7 @@ class CLabeled:
         dst = self.image.copy()
         self._draw_box_on_image(dst, self.boxes)
         x, y = self._roi_limit(x, y)
-        if event == cv2.EVENT_RBUTTONDOWN:  # 删除(中心点或左上点)距离当前鼠标最近的框
+        if ("win32" in sys.platform and event == cv2.EVENT_RBUTTONDOWN) or ("darwin" in sys.platform or "linux" in sys.platform and event == cv2.EVENT_LBUTTONDBLCLK):  # 撤销删除(中心点或左上点)距离当前鼠标最近的框
             self.current_image = self.image.copy()
             if len(self.undo_boxes):
                 self.boxes.append(self.undo_boxes[-1])
@@ -351,6 +354,9 @@ class CLabeled:
                 show_msg = " Backspace : undo"
             cv2.putText(self.win_image, show_msg,
                         (self.width+5, (idx+1)*per_class_h), self.font_type, min(font_size*0.4, 1.0), self.colors[idx], font_size)
+        cv2.putText(self.win_image, f"{self.current_label_index}/{self.total_image_number}",
+                        (self.width+5, (idx+2)*per_class_h), self.font_type, min(font_size*0.4, 1.0), (0, 0, 0), font_size)
+        
         self.win_image[:, :self.width, :] = image
 
     # 从文本读取标注框信息
@@ -452,7 +458,8 @@ class CLabeled:
                 cv2.setMouseCallback(self.windows_name, self._undo_roi)
             else:
                 cv2.setMouseCallback(self.windows_name, self._draw_roi)
-            key = cv2.waitKey(self.decay_time)
+            # key = cv2.waitKey(self.decay_time)
+            key = cv2.waitKeyEx(self.decay_time) # 开启方向键功能
             # print(self.boxes, self.fliter_boxes)
             if not self.fliter_flag:
                 self.boxes.extend(self.fliter_boxes)
@@ -475,13 +482,13 @@ class CLabeled:
             if key == 32:
                 self.auto_play_flag = not self.auto_play_flag
                 self.decay_time = 300 if self.auto_play_flag else 0
-            if key == ord('a') or key == ord('A'):  # 后退一张
+            if key == ord('a') or key == ord('A') or key == 2424832:  # 后退一张
                 self._backward()
                 continue
-            if key == ord('q') or key == ord('Q'):
+            if key == ord('q') or key == ord('Q') or key == 2490368:
                 self.label_index = max(0, self.label_index-1)
                 continue
-            if key == ord('w') or key == ord('W'):
+            if key == ord('w') or key == ord('W') or key == 2621440:
                 self.label_index = min(self.class_num-1, self.label_index+1)
                 continue
             if key == ord('l') or key == ord('L'):  # 删除当前图
@@ -493,14 +500,16 @@ class CLabeled:
                 continue
             if key == 27:  # 退出
                 break
-            if key == ord('d') or key == ord('D'):  # 前进一张
+            if key == ord('d') or key == ord('D') or key == 2555904:  # 前进一张
                 self.current_label_index += 1
                 self.undo_boxes = []
                 continue
-            # else:  # 其他按键
+            # if key in [0, 16, 17, 20, 65505, 65513]:
             #     continue
-            self.current_label_index += 1
-            self.undo_boxes = []
+            if self.auto_play_flag:
+                self.current_label_index += 1
+                self.undo_boxes = []
+
 
 def parse_args():
     parser = argparse.ArgumentParser()
