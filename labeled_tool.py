@@ -240,7 +240,7 @@ class CLabeled:
         #     if len(self.boxes):
         #         del self.boxes[-1]
         #         self._draw_box_on_image(self.current_image, self.boxes)
-        elif ("win32" in sys.platform and event == cv2.EVENT_RBUTTONDOWN) or ("darwin" in sys.platform or "linux" in sys.platform and event == cv2.EVENT_LBUTTONDBLCLK):  # 修改(中心点或左上点)距离当前鼠标最近的框的label_id
+        elif ("win32" in sys.platform and event == cv2.EVENT_RBUTTONDOWN) or (sys.platform in ["linux", "darwin"] and event == cv2.EVENT_LBUTTONDBLCLK):  # 修改(中心点或左上点)距离当前鼠标最近的框的label_id
             self.current_image = self.image.copy()
             change_idx = 0
             if len(self.boxes):
@@ -293,7 +293,7 @@ class CLabeled:
         dst = self.image.copy()
         self._draw_box_on_image(dst, self.boxes)
         x, y = self._roi_limit(x, y)
-        if ("win32" in sys.platform and event == cv2.EVENT_RBUTTONDOWN) or ("darwin" in sys.platform or "linux" in sys.platform and event == cv2.EVENT_LBUTTONDBLCLK):  # 删除(中心点或左上点)距离当前鼠标最近的框
+        if ("win32" in sys.platform and event == cv2.EVENT_RBUTTONDOWN) or (sys.platform in ["linux", "darwin"] and event == cv2.EVENT_LBUTTONDBLCLK):  # 删除(中心点或左上点)距离当前鼠标最近的框
             self.current_image = self.image.copy()
             del_index = 0
             if len(self.boxes):
@@ -310,7 +310,7 @@ class CLabeled:
         dst = self.image.copy()
         self._draw_box_on_image(dst, self.boxes)
         x, y = self._roi_limit(x, y)
-        if ("win32" in sys.platform and event == cv2.EVENT_RBUTTONDOWN) or ("darwin" in sys.platform or "linux" in sys.platform and event == cv2.EVENT_LBUTTONDBLCLK):  # 撤销删除(中心点或左上点)距离当前鼠标最近的框
+        if ("win32" in sys.platform and event == cv2.EVENT_RBUTTONDOWN) or (sys.platform in ["linux", "darwin"] and event == cv2.EVENT_LBUTTONDBLCLK):  # 撤销删除(中心点或左上点)距离当前鼠标最近的框
             self.current_image = self.image.copy()
             if len(self.undo_boxes):
                 self.boxes.append(self.undo_boxes[-1])
