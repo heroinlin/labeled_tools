@@ -233,8 +233,7 @@ class CLabeled:
             else:
                 cv2.circle(self.current_image, (x, y), 5, (0, 0, 255), -1)
             # print(self.boxes)
-            self._update_win_image(self.current_image)
-            cv2.imshow(self.windows_name, self.win_image)
+            self._draw_box_on_image(self.current_image, self.boxes)
         # elif event == cv2.EVENT_RBUTTONDOWN:  # 撤销上一次标注
         #     self.current_image = self.image.copy()
         #     if len(self.boxes):
