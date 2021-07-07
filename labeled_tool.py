@@ -195,18 +195,49 @@ class CLabeled:
         sort_indices = np.argsort(squared_dist)
         return sort_indices
 
+    # 判断点(x, y) 是否在框内
+    def _point_in_box(self, x, y, box):
+        if (x / self.width) < box[0]:
+            return False
+        if (y / self.height) < box[1]:
+            return False
+        if (x / self.width) > box[2]:
+            return False
+        if (y / self.height) > box[3]:
+            return False
+        return True
+
+    # 鼠标左键点击切换id事件
+    def _event_lbuttondown(self, x, y, dst):
+        if self.width < x <= (self.width + self.class_width) and 0 <= y <= self.height:
+            per_class_h = int(min(self.height, 600) / (self.class_num+2))
+            self.label_index = min(max(int((y - 5) / per_class_h), 0), self.class_num-1)
+        x, y = self._roi_limit(x, y)
+        self._update_win_image(dst)
+        cv2.imshow(self.windows_name, self.win_image)
+        if self.class_names[self.label_index] == "move":
+            global move_box
+            move_box = None
+            cv2.setMouseCallback(self.windows_name, self._move_roi)
+        elif self.class_names[self.label_index] == "delete":
+            cv2.setMouseCallback(self.windows_name, self._delete_roi)
+        elif self.class_names[self.label_index] == "undo":
+            cv2.setMouseCallback(self.windows_name, self._undo_roi)
+        else:
+            cv2.setMouseCallback(self.windows_name, self._draw_roi)
+                
     # 标注感兴趣区域
     def _draw_roi(self, event, x, y, flags, param, mode=True):
         global ix, iy, move_ix, move_iy
+        box_border = round(self.width / 400)
         dst = self.image.copy()
         self._draw_box_on_image(dst, self.boxes)
-        x, y = self._roi_limit(x, y)
         if event == cv2.EVENT_LBUTTONDOWN:  # 按下鼠标左键
-            ix, iy = x, y
-            self._update_win_image(dst)
-            cv2.imshow(self.windows_name, self.win_image)
+            ix, iy = self._roi_limit(x, y)
+            self._event_lbuttondown(x, y, dst)
         # 鼠标移动
         elif event == cv2.EVENT_MOUSEMOVE and not (flags and cv2.EVENT_FLAG_LBUTTON):
+            x, y = self._roi_limit(x, y)
             if mode:
                 cv2.line(dst, (x, 0), (x, self.height), self.colors[self.label_index], 1, 8)
                 cv2.line(dst, (0, y), (self.width, y), self.colors[self.label_index], 1, 8)
@@ -216,6 +247,7 @@ class CLabeled:
             cv2.imshow(self.windows_name, self.win_image)
         # 按住鼠标左键进行移动
         elif event == cv2.EVENT_MOUSEMOVE and (flags and cv2.EVENT_FLAG_LBUTTON):
+            x, y = self._roi_limit(x, y)
             if mode:
                 cv2.rectangle(dst, (ix, iy), (x, y), self.colors[self.label_index], 1)
             else:
@@ -223,10 +255,11 @@ class CLabeled:
             self._update_win_image(dst)
             cv2.imshow(self.windows_name, self.win_image)
         elif event == cv2.EVENT_LBUTTONUP:  # 鼠标左键松开
+            x, y = self._roi_limit(x, y)
             if mode:
                 if abs(x - ix) > 10 and abs(y - iy) > 10:
                     cv2.rectangle(self.current_image, (ix, iy),
-                                  (x, y), self.colors[self.label_index], 2)
+                                  (x, y), self.colors[self.label_index], box_border)
                     label_id = self.class_table[self.label_index]
                     self.boxes.append(
                         [ix/self.width, iy/self.height, x/self.width, y/self.height, label_id])
@@ -240,6 +273,7 @@ class CLabeled:
         #         del self.boxes[-1]
         #         self._draw_box_on_image(self.current_image, self.boxes)
         elif ("win32" in sys.platform and event == cv2.EVENT_RBUTTONDOWN) or (sys.platform in ["linux", "darwin"] and event == cv2.EVENT_LBUTTONDBLCLK):  # 修改(中心点或左上点)距离当前鼠标最近的框的label_id
+            x, y = self._roi_limit(x, y)
             self.current_image = self.image.copy()
             change_idx = 0
             if len(self.boxes):
@@ -247,22 +281,22 @@ class CLabeled:
                     # 优先修改(中心点或左上点)距离当前鼠标最近的框的label_id
                     sort_indices = self._get_sort_indices(x, y)
                     change_idx = sort_indices[0]
-                label_id = self.class_table[self.label_index]
-                self.boxes[change_idx][4] = label_id
-                self._draw_box_on_image(self.current_image, self.boxes)
+                if self._point_in_box(x, y, self.boxes[change_idx]):
+                    label_id = self.class_table[self.label_index]
+                    self.boxes[change_idx][4] = label_id
+                    self._draw_box_on_image(self.current_image, self.boxes)
 
     # 对选择的框进行移动
     def _move_roi(self, event, x, y, flags, param):
         global ix, iy, move_box
         dst = self.image.copy()
         self._draw_box_on_image(dst, self.boxes)
-        x, y = self._roi_limit(x, y)
         if event == cv2.EVENT_LBUTTONDOWN:  # 按下鼠标左键
-            ix, iy = x, y
             move_box = None
-            self._update_win_image(dst)
-            cv2.imshow(self.windows_name, self.win_image)
+            ix, iy = self._roi_limit(x, y)
+            self._event_lbuttondown(x, y, dst)
         elif event == cv2.EVENT_MOUSEMOVE and (flags and cv2.EVENT_FLAG_LBUTTON):
+            x, y = self._roi_limit(x, y)
             if len(self.boxes):
                 if len(self.boxes) > 1 and self.move_idx == -1:
                     sort_indices = self._get_sort_indices(x, y)
@@ -277,6 +311,7 @@ class CLabeled:
                 self._update_win_image(dst)
                 cv2.imshow(self.windows_name, self.win_image)
         elif event == cv2.EVENT_LBUTTONUP:  # 鼠标左键松开
+            x, y = self._roi_limit(x, y)
             if move_box is not None:
                 label_idx = self.boxes[self.move_idx][4]
                 del self.boxes[self.move_idx]
@@ -291,8 +326,10 @@ class CLabeled:
     def _delete_roi(self, event, x, y, flags, param):
         dst = self.image.copy()
         self._draw_box_on_image(dst, self.boxes)
-        x, y = self._roi_limit(x, y)
-        if ("win32" in sys.platform and event == cv2.EVENT_RBUTTONDOWN) or (sys.platform in ["linux", "darwin"] and event == cv2.EVENT_LBUTTONDBLCLK):  # 删除(中心点或左上点)距离当前鼠标最近的框
+        if event == cv2.EVENT_LBUTTONDOWN:  # 按下鼠标左键
+            self._event_lbuttondown(x, y, dst)
+        elif ("win32" in sys.platform and event == cv2.EVENT_RBUTTONDOWN) or (sys.platform in ["linux", "darwin"] and event == cv2.EVENT_LBUTTONDBLCLK):  # 删除(中心点或左上点)距离当前鼠标最近的框
+            x, y = self._roi_limit(x, y)
             self.current_image = self.image.copy()
             del_index = 0
             if len(self.boxes):
@@ -308,8 +345,10 @@ class CLabeled:
     def _undo_roi(self, event, x, y, flags, param):
         dst = self.image.copy()
         self._draw_box_on_image(dst, self.boxes)
-        x, y = self._roi_limit(x, y)
-        if ("win32" in sys.platform and event == cv2.EVENT_RBUTTONDOWN) or (sys.platform in ["linux", "darwin"] and event == cv2.EVENT_LBUTTONDBLCLK):  # 撤销删除(中心点或左上点)距离当前鼠标最近的框
+        if event == cv2.EVENT_LBUTTONDOWN:  # 按下鼠标左键
+            self._event_lbuttondown(x, y, dst)
+        elif ("win32" in sys.platform and event == cv2.EVENT_RBUTTONDOWN) or (sys.platform in ["linux", "darwin"] and event == cv2.EVENT_LBUTTONDBLCLK):  # 撤销删除(中心点或左上点)距离当前鼠标最近的框
+            x, y = self._roi_limit(x, y)
             self.current_image = self.image.copy()
             if len(self.undo_boxes):
                 self.boxes.append(self.undo_boxes[-1])
@@ -318,6 +357,7 @@ class CLabeled:
 
     # 将标注框显示到图像上
     def _draw_box_on_image(self, image, boxes):
+        box_border = round(self.width / 400)
         font_size = max(1, int(min(self.width, self.height) / 600))
         for box in boxes:
             if not len(box):
@@ -329,7 +369,7 @@ class CLabeled:
             else:
                 label_id = 0
             label_index = self.class_table.index(label_id)
-            cv2.rectangle(image, pt1, pt2, self.colors[label_index], 2)
+            cv2.rectangle(image, pt1, pt2, self.colors[label_index], box_border)
             cv2.putText(image, self.class_names[label_index],
                         pt1, self.font_type, min(font_size*0.4, 1.0), self.colors[label_index], font_size)
         self._update_win_image(image)
@@ -435,7 +475,7 @@ class CLabeled:
             self.image = cv2.imdecode(np.fromfile(
                 self.images_list[self.current_label_index], dtype=np.uint8), 1)
             h_w_rate = self.image.shape[0]/self.image.shape[1]
-            resize_w = min(1080, self.image.shape[1])
+            resize_w = min(1920, self.image.shape[1])
             self.image = cv2.resize(self.image, (resize_w, int(resize_w*h_w_rate)))
             self.current_image = self.image.copy()
             self.label_path = self.images_list[self.current_label_index].replace(
@@ -475,7 +515,7 @@ class CLabeled:
             if key == 45:  # 按键 _-
                 self.label_index = self.class_names.index("delete")
                 continue
-            if key == 61:  # 按键 =+
+            if key == 61 or key == 43:  # 按键 =+
                 self.label_index = self.class_names.index("move")
                 continue
             if key == 32:

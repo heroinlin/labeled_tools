@@ -34,6 +34,7 @@ python labeled_tool.py -c voc.json
 * 目标框标注id修改
 * 撤销当前删除
 * 类别过滤标注
+* 鼠标左键单击切换id
 
 ## 说明
 
@@ -68,7 +69,7 @@ python labeled_tool.py -c voc.json
 
     ​    鼠标左键拖动进行目标框标注, 按下与松开分别对应左上点和右下点的位置
 
-    ​    Windows鼠标右键(Linux, Mac左键双击)进行进行目标框类别label_id的切换, 切换离当前鼠标位置最近  的框
+    ​    Windows鼠标右键(Linux, Mac左键双击)进行进行目标框类别label_id的切换, 切换离当前鼠标位置最近的框(更新为鼠标点击需要在框内，防止误操作)
 
   * 删除模式:
 
