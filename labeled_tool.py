@@ -23,8 +23,8 @@ Author: Heroinlj
     Backspace: 切换到撤销模式
     1~9: 切换类别label_id为 0~8(越界时为最大类别号)
     0: 切换类别label_id为9(越界时为最大类别号)
-    Q/↑: 向前切换类别
-    W/↓: 向后切换类别
+    W/↑: 向前切换类别
+    S/↓: 向后切换类别
     A/←: 上一张图片
     D/→: 下一张图片
     L: 删除当前图片和标注文件
@@ -96,6 +96,8 @@ class CLabeled:
         # 显示窗口的名称
         self.windows_name = "image"
         self.font_type = cv2.FONT_HERSHEY_SIMPLEX
+        # 是否有进行操作
+        self.operate_flag = False
         self.auto_play_flag = False
         self.decay_time = 33 if self.auto_play_flag else 0
         self._may_make_dir()
@@ -106,6 +108,7 @@ class CLabeled:
         self.current_image = None
         self.label_path = None
         self.boxes = list()
+        self.operate_flag = False
 
     # 参数检查，确保代码可运行
     def _check(self):
@@ -267,6 +270,7 @@ class CLabeled:
                 cv2.circle(self.current_image, (x, y), 5, (0, 0, 255), -1)
             # print(self.boxes)
             self._draw_box_on_image(self.current_image, self.boxes)
+            self.operate_flag = True
         # elif event == cv2.EVENT_RBUTTONDOWN:  # 撤销上一次标注
         #     self.current_image = self.image.copy()
         #     if len(self.boxes):
@@ -285,6 +289,7 @@ class CLabeled:
                     label_id = self.class_table[self.label_index]
                     self.boxes[change_idx][4] = label_id
                     self._draw_box_on_image(self.current_image, self.boxes)
+                self.operate_flag = True
 
     # 对选择的框进行移动
     def _move_roi(self, event, x, y, flags, param):
@@ -321,6 +326,7 @@ class CLabeled:
                 self._draw_box_on_image(self.image.copy(), self.boxes)
                 self.move_idx = -1
                 move_box = None
+                self.operate_flag = True
 
     # 对选择的框进行删除
     def _delete_roi(self, event, x, y, flags, param):
@@ -340,6 +346,7 @@ class CLabeled:
                 self.undo_boxes.append(self.boxes[del_index])
                 del self.boxes[del_index]
                 self._draw_box_on_image(self.current_image, self.boxes)
+                self.operate_flag = True
 
     # 恢复上一次删除的框
     def _undo_roi(self, event, x, y, flags, param):
@@ -353,6 +360,7 @@ class CLabeled:
             if len(self.undo_boxes):
                 self.boxes.append(self.undo_boxes[-1])
                 del self.undo_boxes[-1]
+                self.operate_flag = True
             self._draw_box_on_image(self.current_image, self.boxes)
 
     # 将标注框显示到图像上
@@ -502,7 +510,8 @@ class CLabeled:
             # print(self.boxes, self.fliter_boxes)
             if not self.fliter_flag:
                 self.boxes.extend(self.fliter_boxes)
-            self.write_label_file(self.label_path, self.boxes)
+            if self.operate_flag:
+                self.write_label_file(self.label_path, self.boxes)
             if 48 < key <= 57:  # 按键 0-9
                 self.label_index = min(key - 49, self.class_num - 1)
                 continue
@@ -524,10 +533,10 @@ class CLabeled:
             if key == ord('a') or key == ord('A') or key == 2424832:  # 后退一张
                 self._backward()
                 continue
-            if key == ord('q') or key == ord('Q') or key == 2490368:
+            if key == ord('w') or key == ord('W') or key == 2490368:
                 self.label_index = max(0, self.label_index-1)
                 continue
-            if key == ord('w') or key == ord('W') or key == 2621440:
+            if key == ord('s') or key == ord('S') or key == 2621440:
                 self.label_index = min(self.class_num-1, self.label_index+1)
                 continue
             if key == ord('l') or key == ord('L'):  # 删除当前图
