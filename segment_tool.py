@@ -110,7 +110,7 @@ class CLabeled:
         self.font_type = cv2.FONT_HERSHEY_SIMPLEX
         # 是否有进行操作
         self.operate_flag = False
-        # 开启语义风格模式
+        # 开启语义分割模式
         self.instance_flag = True
         # 是否将掩码映射到图上
         self.show_mask = True
@@ -220,7 +220,9 @@ class CLabeled:
             cv2.line(dst, (0, y), (self.width, y), self.colors[self.label_index], 1, 4)
             cv2.circle(dst, (x, y), self.pixel_size, self.colors[self.label_index], -1, cv2.LINE_AA)
             if is_mouse_lb_down:
-                cv2.line(self.masks, (ix, iy), (x, y), color=self.colors[self.label_index], thickness=self.pixel_size, lineType=cv2.LINE_AA)
+                cv2.circle(self.current_image, (x, y), self.pixel_size, self.colors[self.label_index], -1, cv2.LINE_AA)
+                cv2.circle(self.masks, (x, y), self.pixel_size, self.colors[self.label_index], -1, cv2.LINE_AA)
+                # cv2.line(self.masks, (ix, iy), (x, y), color=self.colors[self.label_index], thickness=self.pixel_size, lineType=cv2.LINE_AA)
                 ix, iy = self._roi_limit(x, y)
                 self._apply_mask_on_image(self.current_image, self.masks)
             else:
@@ -230,6 +232,7 @@ class CLabeled:
             x, y = self._roi_limit(x, y)
             is_mouse_lb_down = False
             self.operate_flag = True
+            self.current_image = self.image.copy()
 
     # 擦除掩码操作
     def _eraser_roi(self, event, x, y, flags, param):
@@ -251,7 +254,9 @@ class CLabeled:
             cv2.line(dst, (0, y), (self.width, y), self.colors[self.label_index], 1, 8)
             cv2.circle(dst, (x, y), self.pixel_size, self.colors[self.label_index], -1, cv2.LINE_AA)
             if is_mouse_lb_down:
-                cv2.line(self.masks, (ix, iy), (x, y), color=[0, 0, 0], thickness=self.pixel_size)
+                cv2.circle(self.current_image, (x, y), self.pixel_size, self.colors[self.label_index], -1, cv2.LINE_AA)
+                cv2.circle(self.masks, (x, y), self.pixel_size, [0, 0, 0], -1, cv2.LINE_AA)
+                # cv2.line(self.masks, (ix, iy), (x, y), color=[0, 0, 0], thickness=self.pixel_size)
                 ix, iy = self._roi_limit(x, y)
                 self._apply_mask_on_image(self.current_image, self.masks)
             else:
@@ -261,6 +266,7 @@ class CLabeled:
             x, y = self._roi_limit(x, y)
             is_mouse_lb_down = False
             self.operate_flag = True
+            self.current_image = self.image.copy()
 
     # 撤销上一次操作的mask
     def _undo_roi(self, event, x, y, flags, param):
@@ -370,7 +376,7 @@ class CLabeled:
     # 将标注框显示到图像上
     def _apply_mask_on_image(self, image, mask):
         if mask is not None:
-            if mask.ndim == 1:
+            if mask.ndim != 3:
                 mask = np.repeat(np.asarray(mask)[:, :, None], 3, axis=2)
             # print(image.shape)
             # print(mask.shape)
@@ -421,21 +427,32 @@ class CLabeled:
 
     # 从文本读取标注框信息
     def read_mask_file(self, mask_file_path):
-        mask = cv2.imread(mask_file_path)
+        masks = cv2.imread(mask_file_path)
         if not self.instance_flag:
-            lower_white = np.array([1,1,1])
+            lower_white1 = np.array([1,0,0])
+            lower_white2 = np.array([0,1,0])
+            lower_white3 = np.array([0,0,1])
             upper_white = np.array([255,255,255])
-            mask = cv2.inRange(mask, lower_white, upper_white)
-            mask_inv = cv2.bitwise_not(mask)
-        self.masks = mask
+            mask1 = cv2.inRange(masks, lower_white1, upper_white)
+            mask2 = cv2.inRange(masks, lower_white2, upper_white)
+            mask3 = cv2.inRange(masks, lower_white3, upper_white)
+            masks = cv2.bitwise_or(mask1, mask2, mask3)
+        if masks.ndim != 3:
+                masks = np.repeat(np.asarray(masks)[:, :, None], 3, axis=2)
+        self.masks = masks
         
     # 将标注框信息保存到文本
     def save_mask_file(self, mask_file_path, masks):
         masks = masks.astype(np.uint8)
         if not self.instance_flag:
-            lower_white = np.array([1,1,1])
+            lower_white1 = np.array([1,0,0])
+            lower_white2 = np.array([0,1,0])
+            lower_white3 = np.array([0,0,1])
             upper_white = np.array([255,255,255])
-            masks = cv2.inRange(masks, lower_white, upper_white)
+            mask1 = cv2.inRange(masks, lower_white1, upper_white)
+            mask2 = cv2.inRange(masks, lower_white2, upper_white)
+            mask3 = cv2.inRange(masks, lower_white3, upper_white)
+            masks = cv2.bitwise_or(mask1, mask2, mask3)
         cv2.imwrite(mask_file_path, masks)
 
     # 记录当前已标注位置，写到文本
