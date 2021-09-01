@@ -12,7 +12,7 @@ import cv2
 import argparse
 from collections import OrderedDict
 """
-图像标注脚本, 生成yolo格式的标注文件
+图像目标框属性附加标注脚本
 Author: Heroinlj
 按键说明: (字母按键不区分大小写, 输入法需要切换到英文模式)
     Esc: 退出程序
@@ -27,6 +27,8 @@ Author: Heroinlj
     A/←: 上一张图片
     D/→: 下一张图片
     L: 删除当前图片和标注文件
+    Q: 切换到上一属性列表
+    E: 切换到下一属性列表
 鼠标事件:
     标注模式:
         鼠标左键拖动进行目标框标注, 按下与松开分别对应左上点和右下点的位置
@@ -38,7 +40,7 @@ Author: Heroinlj
     撤销模式:
         Windows鼠标右键(Linux, Mac左键双击)撤销删除操作, 撤销对当前图片的一次删除操作
 参数文件说明：
-    可在对应参数文件(如teller.json)中设置参数
+    可在对应参数文件(如teller_attr.json)中设置参数
     windows_name： 标注程序窗口命名
     dataset_path： 标注数据文件夹路径, 路径下格式为
                    - dataset_path
@@ -50,6 +52,7 @@ Author: Heroinlj
     total_class_names： 标注所有类别列表
     class_names： 当前标注只展示的类别列表
     colors: 标注颜色列表
+    attrs： 标注所有属性列表
 """
 ix, iy = -1, -1
 is_mouse_lb_down = False
@@ -70,12 +73,16 @@ class CLabeled:
         self.win_image = None
         # 待标注图片
         self.image = None
+        # 属性类型索引
+        self.attr_type_idx = 0
         # 目标框的分类索引号
         self.label_index = 0
         # 需要移动的分类索引号
         self.move_idx = -1
         # 标注框信息
         self.boxes = list()
+        # 标注属性信息
+        self.attrs = list()
         # 缓存被删除的框，以进行恢复
         self.undo_boxes = []
         # 过滤不显示的框
@@ -91,12 +98,18 @@ class CLabeled:
         self.annotation = None
         # 类别数
         self.class_num = 0
+        # 原始所有类别名称
+        self.src_total_class_names = None
+        # 原始展示类别名称
+        self.src_class_names = None
         # 所有类别名称
         self.total_class_names = None
         # 类别列表
         self.class_table = None
         # 标注展示类别名称
         self.class_names = None
+        # 属性字典
+        self.attrs_dict = None
         # 类别对应的颜色
         self.colors = [[random.randint(0, 255) for _ in range(3)]
                        for _ in range(max(1, self.class_num))]
@@ -110,6 +123,7 @@ class CLabeled:
         self.windows_name = "image"
         self.font_type = cv2.FONT_HERSHEY_SIMPLEX
         # 是否有进行操作
+        self.attr_flag = True
         self.operate_flag = False
         self.auto_play_flag = False
         # 默认自动播放等待时间, ms为单位
@@ -127,6 +141,7 @@ class CLabeled:
         self.current_image = None
         self.label_path = None
         self.boxes = list()
+        self.attrs = list()
         self.operate_flag = False
 
     # 参数检查，确保代码可运行
@@ -135,6 +150,18 @@ class CLabeled:
             self.class_num = 1
         if self.total_class_names is None:
             self.total_class_names = range(self.class_num)
+        if self.attr_type_idx:
+            attrs_list = []
+            for attr_dict in self.attrs_dict.values():
+                for attr_list in attr_dict.values():
+                    attrs_list.append(attr_list)
+            self.total_class_names = attrs_list[self.attr_type_idx - 1].copy()
+            self.class_names = self.total_class_names.copy()
+            # self.total_class_names.extend(["delete"])
+            # self.class_names.extend(["delete"])
+        else:
+            self.total_class_names = self.src_total_class_names.copy()
+            self.class_names = self.src_class_names.copy()
         if isinstance(self.total_class_names, list):
             self.total_class_names.extend(["delete", "move", "undo"])
         if self.class_names is None:
@@ -145,6 +172,7 @@ class CLabeled:
         self.class_table = [
             self.total_class_names.index(name) for name in self.class_names
         ]
+        self.label_index = 0
         # 判断当前颜色列表是否够用, 不够的话进行随机添加
         if isinstance(self.colors, list) and len(self.colors) < self.class_num:
             self.colors.extend(
@@ -253,8 +281,10 @@ class CLabeled:
             cv2.setMouseCallback(self.windows_name, self._delete_roi)
         elif self.class_names[self.label_index] == "undo":
             cv2.setMouseCallback(self.windows_name, self._undo_roi)
-        else:
+        elif not self.attr_type_idx:
             cv2.setMouseCallback(self.windows_name, self._draw_roi)
+        elif self.attr_type_idx:
+            cv2.setMouseCallback(self.windows_name, self._attr_map)
 
     # 标注感兴趣区域
     def _draw_roi(self, event, x, y, flags, param, mode=True):
@@ -298,10 +328,13 @@ class CLabeled:
                     cv2.rectangle(self.current_image, (ix, iy), (x, y),
                                   self.colors[self.label_index], box_border)
                     label_id = self.class_table[self.label_index]
-                    self.boxes.append([
+                    box = [
                         ix / self.width, iy / self.height, x / self.width,
                         y / self.height, label_id
-                    ])
+                    ]
+                    if self.attr_flag:
+                        box.extend([0] * len(self.attrs_dict))
+                    self.boxes.append(box)
             else:
                 cv2.circle(self.current_image, (x, y), 5, (0, 0, 255), -1)
             # print(self.boxes)
@@ -327,6 +360,81 @@ class CLabeled:
                 if self._point_in_box(x, y, self.boxes[change_idx]):
                     label_id = self.class_table[self.label_index]
                     self.boxes[change_idx][4] = label_id
+                    self._draw_box_on_image(self.current_image, self.boxes)
+                self.operate_flag = True
+
+    # 属性标注
+    def _attr_map(self, event, x, y, flags, param, mode=True):
+        global ix, iy, move_ix, move_iy
+        box_border = round(self.width / 400)
+        dst = self.image.copy()
+        self._draw_box_on_image(dst, self.boxes)
+        if event == cv2.EVENT_LBUTTONDOWN:  # 按下鼠标左键
+            ix, iy = self._roi_limit(x, y)
+            self._event_lbuttondown(x, y, dst)
+        # 鼠标移动
+        elif event == cv2.EVENT_MOUSEMOVE and not (flags
+                                                   and cv2.EVENT_FLAG_LBUTTON):
+            x, y = self._roi_limit(x, y)
+            if mode:
+                cv2.line(dst, (x, 0), (x, self.height),
+                         self.colors[self.label_index], 1, 8)
+                cv2.line(dst, (0, y), (self.width, y),
+                         self.colors[self.label_index], 1, 8)
+            else:
+                cv2.circle(dst, (x, y), 5, (0, 0, 255), -1)
+            self._update_win_image(dst)
+            cv2.imshow(self.windows_name, self.win_image)
+        # 按住鼠标左键进行移动
+        elif event == cv2.EVENT_MOUSEMOVE and (flags
+                                               and cv2.EVENT_FLAG_LBUTTON):
+            x, y = self._roi_limit(x, y)
+            if mode:
+                cv2.rectangle(dst, (ix, iy), (x, y),
+                              self.colors[self.label_index], 1)
+            else:
+                cv2.circle(dst, (x, y), 5, self.colors[self.label_index], -1)
+            self._update_win_image(dst)
+            cv2.imshow(self.windows_name, self.win_image)
+        elif event == cv2.EVENT_LBUTTONUP:  # 鼠标左键松开
+            x, y = self._roi_limit(x, y)
+            if mode:
+                if abs(x - ix) > 10 and abs(y - iy) > 10:
+                    cv2.rectangle(self.current_image, (ix, iy), (x, y),
+                                  self.colors[self.label_index], box_border)
+                    attr_type_name = list(
+                        self.attrs_dict.keys())[self.attr_type_idx - 1]
+                    label_name = list(
+                        self.attrs_dict[attr_type_name].keys())[0]
+                    label_id = self.src_total_class_names.index(label_name)
+                    box = [
+                        ix / self.width, iy / self.height, x / self.width,
+                        y / self.height, label_id
+                    ]
+                    box.extend([0] * len(self.attrs_dict))
+                    box[4 + self.attr_type_idx] = self.label_index + 1
+                    self.boxes.append(box)
+
+            else:
+                cv2.circle(self.current_image, (x, y), 5, (0, 0, 255), -1)
+            # print(self.boxes)
+            self._draw_box_on_image(self.current_image, self.boxes)
+            self.operate_flag = True
+        elif ("win32" in sys.platform and event == cv2.EVENT_RBUTTONDOWN) or (
+                sys.platform in ["linux", "darwin"] and event
+                == cv2.EVENT_LBUTTONDBLCLK):  # 修改(中心点或左上点)距离当前鼠标最近的框的label_id
+            x, y = self._roi_limit(x, y)
+            self.current_image = self.image.copy()
+            change_idx = 0
+            if len(self.boxes):
+                if len(self.boxes) > 1:
+                    # 优先修改(中心点或左上点)距离当前鼠标最近的框的label_id
+                    sort_indices = self._get_sort_indices(x, y)
+                    change_idx = sort_indices[0]
+                if self._point_in_box(x, y, self.boxes[change_idx]):
+                    label_id = self.class_table[self.label_index]
+                    self.boxes[change_idx][4 +
+                                           self.attr_type_idx] = label_id + 1
                     self._draw_box_on_image(self.current_image, self.boxes)
                 self.operate_flag = True
 
@@ -360,13 +468,19 @@ class CLabeled:
             x, y = self._roi_limit(x, y)
             if move_box is not None:
                 label_idx = self.boxes[self.move_idx][4]
+                if self.attr_flag:
+                    attr_idxs = self.boxes[self.move_idx][5:5 +
+                                                          len(self.attrs_dict)]
                 del self.boxes[self.move_idx]
                 x1, y1, x2, y2 = self._move_delta_limit(
                     x - ix, y - iy, move_box)
-                self.boxes.append([
+                box = [
                     x1 / self.width, y1 / self.height, x2 / self.width,
                     y2 / self.height, label_idx
-                ])
+                ]
+                if self.attr_flag:
+                    box.extend(attr_idxs)
+                self.boxes.append(box)
                 self._draw_box_on_image(self.image.copy(), self.boxes)
                 self.move_idx = -1
                 move_box = None
@@ -421,22 +535,24 @@ class CLabeled:
             pt1 = (int(image.shape[1] * box[0]), int(image.shape[0] * box[1]))
             pt2 = (int(image.shape[1] * box[2]), int(image.shape[0] * box[3]))
             if len(box) > 4:
-                label_id = box[4]
+                label_id = box[4 + self.attr_type_idx]
             else:
                 label_id = 0
+            if self.attr_type_idx and label_id:
+                label_id -= 1
             label_index = self.class_table.index(label_id)
             cv2.rectangle(image, pt1, pt2, self.colors[label_index],
                           box_border)
             if pt1[1] < 10:
                 cv2.putText(image, self.class_names[label_index],
-                        (pt1[0], pt1[1] + 10), self.font_type,
-                        min(font_size * 0.4,
-                            1.0), self.colors[label_index], font_size)
+                            (pt1[0], pt1[1] + 10), self.font_type,
+                            min(font_size * 0.4,
+                                1.0), self.colors[label_index], font_size)
             else:
                 cv2.putText(image,
-                        self.class_names[label_index], pt1, self.font_type,
-                        min(font_size * 0.4,
-                            1.0), self.colors[label_index], font_size)
+                            self.class_names[label_index], pt1, self.font_type,
+                            min(font_size * 0.4,
+                                1.0), self.colors[label_index], font_size)
         self._update_win_image(image)
         cv2.imshow(self.windows_name, self.win_image)
 
@@ -446,8 +562,13 @@ class CLabeled:
         font_size = max(1, int(min(self.width, self.height) / 600))
         self.win_image = np.zeros(
             [self.height, self.class_width + self.width, 3], dtype=np.uint8)
-        self.win_image[:, self.width:self.width+self.class_width, :] = 255
-        self.win_image[(self.label_index+1)*per_class_h - min(per_class_h, 10):5+(self.label_index+1)*per_class_h, self.width:self.width+self.class_width] = [255, 245, 152]
+        self.win_image[:, self.width:self.width + self.class_width, :] = 255
+        self.win_image[(self.label_index + 1) * per_class_h -
+                       min(per_class_h, 10):5 +
+                       (self.label_index + 1) * per_class_h,
+                       self.width:self.width + self.class_width] = [
+                           255, 245, 152
+                       ]
         for idx in range(self.class_num):
             show_msg = str(idx + 1) + ": " + self.class_names[idx]
             if self.class_names[idx] == "delete":
@@ -458,17 +579,12 @@ class CLabeled:
                 show_msg = " Backspace : undo"
             cv2.putText(self.win_image, show_msg,
                         (self.width + 5, (idx + 1) * per_class_h),
-                        self.font_type,
-                        min(font_size * 0.4,1.0),
-                        self.colors[idx],
-                        font_size)
+                        self.font_type, min(font_size * 0.4,
+                                            1.0), self.colors[idx], font_size)
         cv2.putText(self.win_image,
                     f"{self.current_label_index}/{self.total_image_number}",
-                    (self.width + 5, (idx + 2) * per_class_h),
-                    self.font_type,
-                    min(font_size * 0.4, 1.0),
-                    (0, 0, 0),
-                    font_size)
+                    (self.width + 5, (idx + 2) * per_class_h), self.font_type,
+                    min(font_size * 0.4, 1.0), (0, 0, 0), font_size)
 
         self.win_image[:, :self.width, :] = image
 
@@ -481,8 +597,21 @@ class CLabeled:
             for line in label_file:
                 if len(line.strip().split()) > 4:
                     begin_index = 1
-                x, y, w, h = [float(e) for e in line.strip().split()][begin_index: begin_index + 4]
-                label_id = int(line.strip().split()[0]) if begin_index == 1 else 0
+                x, y, w, h = [float(e) for e in line.strip().split()
+                              ][begin_index:begin_index + 4]
+                label_id = int(
+                    line.strip().split()[0]) if begin_index == 1 else 0
+                if len(line.strip().split()) > 5:
+                    attrs = [
+                        int(e) for e in line.strip().split()[begin_index + 4:]
+                    ]
+                else:
+                    attrs = [0] * len(self.attrs_dict)
+                rest_num = len(self.attrs_dict) - len(attrs)
+                if rest_num < 0:
+                    attrs = attrs[0:len(self.attrs_dict)]
+                elif rest_num > 0:
+                    attrs.extend([0] * rest_num)
                 x1 = x - w / 2
                 y1 = y - h / 2
                 x2 = x + w / 2
@@ -492,16 +621,33 @@ class CLabeled:
                 x2 = min(x2, 1)
                 y2 = min(y2, 1)
                 box = [x1, y1, x2, y2, label_id]
-                if label_id in self.class_table:
-                    boxes.append(box)
+                if self.attr_flag:
+                    box.extend(attrs)
+                if not self.attr_flag or not self.attr_type_idx:
+                    if label_id in self.class_table:
+                        boxes.append(box)
+                    else:
+                        fliter_boxes.append(box)
                 else:
-                    fliter_boxes.append(box)
+                    self.operate_flag = True
+                    attr_type_name = list(
+                        self.attrs_dict.keys())[self.attr_type_idx - 1]
+                    # 过滤出要进行属性标注的主分类框
+                    if self.src_total_class_names[label_id] == list(
+                            self.attrs_dict[attr_type_name].keys())[0]:
+                        # 属性部分的分类号由1开始记， 0留给非此类目标使用
+                        box[4 + self.attr_type_idx] = max(
+                            1, box[4 + self.attr_type_idx])
+                        boxes.append(box)
+                    else:
+                        fliter_boxes.append(box)
         self.boxes = boxes
         self.fliter_boxes = fliter_boxes
 
     # 将标注框信息保存到文本
     def write_label_file(self, label_file_path, boxes):
         label_file = open(label_file_path, "w")
+        attrs = []
         for box in boxes:
             box = self.box_fix(box)
             center_x = (box[0] + box[2]) / 2
@@ -512,8 +658,22 @@ class CLabeled:
                 label_id = box[4]
             else:
                 label_id = 0
-            label_file.writelines("{} {} {} {} {}\n".format(
+            label_file.writelines("{} {} {} {} {}".format(
                 label_id, center_x, center_y, width, height))
+            if self.attr_flag:
+                if len(box) == 5:
+                    box.extend([0] * len(self.attrs_dict))
+                attr_type_name = list(
+                    self.attrs_dict.keys())[self.attr_type_idx - 1]
+                # 过滤出要进行属性标注的主分类框
+                if self.src_total_class_names[label_id] == list(
+                        self.attrs_dict[attr_type_name].keys())[0]:
+                    box[4 + self.attr_type_idx] = max(
+                        1, box[4 + self.attr_type_idx])
+                attrs = box[5:]
+                for attr in attrs:
+                    label_file.writelines(" {}".format(attr))
+            label_file.writelines("\n")
             # label_file.writelines("{} {} {} {}\n".format(center_x, center_y, width, height))
         label_file.close()
 
@@ -535,7 +695,7 @@ class CLabeled:
     def labeled(self):
         self._check()
         self.images_list = sorted(
-            glob.glob("{}/*/*.jpg".format(self.image_folder)))
+            glob.glob("{}/*/*.[jp][pn]g".format(self.image_folder)))
         self._compute_total_image_number()
         print("需要标注的图片总数为： ", self.total_image_number)
         if os.path.exists(self.checkpoint_path):
@@ -557,7 +717,7 @@ class CLabeled:
             self.current_image = self.image.copy()
             self.label_path = self.images_list[
                 self.current_label_index].replace("images", "labels").replace(
-                    ".jpg", ".txt")
+                    ".jpg", ".txt").replace(".png", ".txt")
             if os.path.exists(self.label_path):
                 self.read_label_file(self.label_path)
 
@@ -567,14 +727,24 @@ class CLabeled:
             # cv2.imshow(self.windows_name, self.image)
             cv2.namedWindow(self.windows_name, 0)
             self._draw_box_on_image(self.image.copy(), self.boxes)
-            if self.class_names[self.label_index] == "move":
-                cv2.setMouseCallback(self.windows_name, self._move_roi)
-            elif self.class_names[self.label_index] == "delete":
-                cv2.setMouseCallback(self.windows_name, self._delete_roi)
-            elif self.class_names[self.label_index] == "undo":
-                cv2.setMouseCallback(self.windows_name, self._undo_roi)
+            if self.attr_type_idx:  # 开启属性标注模式
+                if self.class_names[self.label_index] == "move":
+                    cv2.setMouseCallback(self.windows_name, self._move_roi)
+                elif self.class_names[self.label_index] == "delete":
+                    cv2.setMouseCallback(self.windows_name, self._delete_roi)
+                elif self.class_names[self.label_index] == "undo":
+                    cv2.setMouseCallback(self.windows_name, self._undo_roi)
+                else:
+                    cv2.setMouseCallback(self.windows_name, self._attr_map)
             else:
-                cv2.setMouseCallback(self.windows_name, self._draw_roi)
+                if self.class_names[self.label_index] == "move":
+                    cv2.setMouseCallback(self.windows_name, self._move_roi)
+                elif self.class_names[self.label_index] == "delete":
+                    cv2.setMouseCallback(self.windows_name, self._delete_roi)
+                elif self.class_names[self.label_index] == "undo":
+                    cv2.setMouseCallback(self.windows_name, self._undo_roi)
+                else:
+                    cv2.setMouseCallback(self.windows_name, self._draw_roi)
             # key = cv2.waitKey(self.decay_time)
             key = cv2.waitKeyEx(self.decay_time)  # 开启方向键功能
             # print(self.boxes, self.fliter_boxes)
@@ -607,8 +777,15 @@ class CLabeled:
                 self.label_index = max(0, self.label_index - 1)
                 continue
             if key == ord('s') or key == ord('S') or key == 2621440:
-                self.label_index = min(self.class_num - 1,
-                                       self.label_index + 1)
+                self.label_index = min(self.class_num - 1, self.label_index+1)
+                continue
+            if self.attr_flag and key == ord('q') or key == ord('Q'): # 向后切换属性表
+                self.attr_type_idx = (self.attr_type_idx - 1) % (len(self.attrs_dict) + 1)
+                self._check()
+                continue
+            if self.attr_flag and key == ord('e') or key == ord('E'): # 向前切换属性表
+                self.attr_type_idx = (self.attr_type_idx + 1) % (len(self.attrs_dict) + 1)
+                self._check()
                 continue
             if key == ord('l') or key == ord('L'):  # 删除当前图
                 os.remove(self.images_list[self.current_label_index])
@@ -637,7 +814,7 @@ def parse_args():
                         type=str,
                         help='json file path',
                         default=os.path.join(work_root,
-                                             "voc.json"))
+                                             "voc_attr.json"))
     args = parser.parse_args()
     json_path = args.cfg
     json_file = open(json_path, 'r')
@@ -646,9 +823,12 @@ def parse_args():
     dataset_path = cfgs["dataset_path"]
     task = CLabeled(dataset_path)
     task.windows_name = cfgs["windows_name"]
+    task.src_total_class_names = cfgs["total_class_names"]
     task.total_class_names = cfgs["total_class_names"]
+    task.src_class_names = cfgs["class_names"]
     task.class_names = cfgs["class_names"]
     task.colors = cfgs["colors"]
+    task.attrs_dict = cfgs["attrs"]
     task.default_decay_time = int(cfgs.get("decay_time", 1000))
     task.pixel_size = int(cfgs.get("pixel_size", 1920))
     task.select_type = int(cfgs.get("select_type", 0))
