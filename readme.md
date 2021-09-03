@@ -88,7 +88,7 @@ python labeled_tool.py -c voc.json
   
     * 参数文件说明：
   
-      可在对应参数文件(如teller.json)中设置参数
+      可在对应参数文件(如voc.json)中设置参数
   
       * windows_name： 标注程序窗口命名
   
@@ -298,7 +298,7 @@ python attr_labeled_tool.py -c voc_attr.json
 
 * 参数文件说明：
 
-  可在对应参数文件(如teller_attr.json)中设置参数
+  可在对应参数文件(如voc_attr.json)中设置参数
 
   * windows_name： 标注程序窗口命名
 
