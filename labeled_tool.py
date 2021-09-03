@@ -20,6 +20,7 @@ Author: Heroinlj
     -: 切换到删除模式
     +: 切换到移动模式
     Backspace: 切换到撤销模式
+    \| : 切换到修正模式
     1~9: 切换类别label_id为 0~8(越界时为最大类别号)
     0: 切换类别label_id为9(越界时为最大类别号)
     W/↑: 向前切换类别
@@ -32,11 +33,17 @@ Author: Heroinlj
         鼠标左键拖动进行目标框标注, 按下与松开分别对应左上点和右下点的位置
         Windows鼠标右键(Linux, Mac左键双击)进行进行目标框类别label_id的切换, 切换离当前鼠标位置最近的框
     删除模式:
+        鼠标左键点击, 高亮离当前鼠标位置最近的框 
         Windows鼠标右键(Linux, Mac左键双击)删除目标框, 删除离当前鼠标位置最近的框 
     移动模式:
+        鼠标左键点击, 高亮离当前鼠标位置最近的框
         鼠标左键拖动来移动目标框，移动离当前鼠标位置最近的框
     撤销模式:
         Windows鼠标右键(Linux, Mac左键双击)撤销删除操作, 撤销对当前图片的一次删除操作
+    修正模式：
+        鼠标左键点击, 高亮离当前鼠标位置最近的框
+        按住Alt的同时鼠标左键点击, 高亮所选框最近的顶点(左上点或右下点)
+        在高亮的情况下, Windows鼠标右键(Linux, Mac左键双击), 修正所选点的位置
 参数文件说明：
     可在对应参数文件(如teller.json)中设置参数
     windows_name： 标注程序窗口命名
@@ -53,6 +60,8 @@ Author: Heroinlj
 """
 ix, iy = -1, -1
 is_mouse_lb_down = False
+highlight_idx = -1
+select_idx = -1
 
 
 # 目标框标注程序
@@ -100,6 +109,8 @@ class CLabeled:
         # 类别对应的颜色
         self.colors = [[random.randint(0, 255) for _ in range(3)]
                        for _ in range(max(1, self.class_num))]
+        # 高亮颜色
+        self.highlight_colors = [[180, 130, 70], [160, 158, 95]]
         # 右侧类别名显示的宽度
         self.class_width = 400
         # 图像宽
@@ -123,6 +134,10 @@ class CLabeled:
 
     # 重置
     def _reset(self):
+        global is_mouse_lb_down, highlight_idx, select_idx
+        is_mouse_lb_down = False
+        highlight_idx = -1
+        select_idx = -1
         self.image = None
         self.current_image = None
         self.label_path = None
@@ -136,11 +151,11 @@ class CLabeled:
         if self.total_class_names is None:
             self.total_class_names = range(self.class_num)
         if isinstance(self.total_class_names, list):
-            self.total_class_names.extend(["delete", "move", "undo"])
+            self.total_class_names.extend(["delete", "move", "undo", "fix"])
         if self.class_names is None:
             self.class_names = self.total_class_names
         else:
-            self.class_names.extend(["delete", "move", "undo"])
+            self.class_names.extend(["delete", "move", "undo", "fix"])
         self.class_num = len(self.class_names)
         self.class_table = [
             self.total_class_names.index(name) for name in self.class_names
@@ -237,6 +252,8 @@ class CLabeled:
 
     # 鼠标左键点击切换id事件
     def _event_lbuttondown(self, x, y, dst):
+        global highlight_idx
+        highlight_idx = -1
         if self.width < x <= (self.width +
                               self.class_width) and 0 <= y <= self.height:
             per_class_h = int(min(self.height, 600) / (self.class_num + 2))
@@ -253,6 +270,8 @@ class CLabeled:
             cv2.setMouseCallback(self.windows_name, self._delete_roi)
         elif self.class_names[self.label_index] == "undo":
             cv2.setMouseCallback(self.windows_name, self._undo_roi)
+        elif self.class_names[self.label_index] == "fix":
+            cv2.setMouseCallback(self.windows_name, self._fix_roi)
         else:
             cv2.setMouseCallback(self.windows_name, self._draw_roi)
 
@@ -332,13 +351,17 @@ class CLabeled:
 
     # 对选择的框进行移动
     def _move_roi(self, event, x, y, flags, param):
-        global ix, iy, move_box
+        global ix, iy, move_box, is_mouse_lb_down, highlight_idx
         dst = self.image.copy()
+        if highlight_idx >= 0:
+            self._draw_box_highlight_on_image(dst, self.boxes[highlight_idx])
         self._draw_box_on_image(dst, self.boxes)
         if event == cv2.EVENT_LBUTTONDOWN:  # 按下鼠标左键
             move_box = None
             ix, iy = self._roi_limit(x, y)
             self._event_lbuttondown(x, y, dst)
+            if x == ix and y == iy:
+                is_mouse_lb_down = True
         elif event == cv2.EVENT_MOUSEMOVE and (flags
                                                and cv2.EVENT_FLAG_LBUTTON):
             x, y = self._roi_limit(x, y)
@@ -356,14 +379,24 @@ class CLabeled:
                               self.colors[self.label_index], 1)
                 self._update_win_image(dst)
                 cv2.imshow(self.windows_name, self.win_image)
-        elif event == cv2.EVENT_LBUTTONUP:  # 鼠标左键松开
+        elif event == cv2.EVENT_LBUTTONUP and is_mouse_lb_down:  # 鼠标左键松开
             x, y = self._roi_limit(x, y)
+            is_mouse_lb_down = False
+            highlight_idx = -1
+            if len(self.boxes):
+                highlight_idx = 0
+                if len(self.boxes) > 1:
+                    # 优先修改(中心点或左上点)距离当前鼠标最近的框的label_id
+                    sort_indices = self._get_sort_indices(x, y)
+                    highlight_idx = sort_indices[0]
+                if not self._point_in_box(x, y, self.boxes[highlight_idx]):
+                    highlight_idx = -1
             if move_box is not None:
                 label_idx = self.boxes[self.move_idx][4]
                 del self.boxes[self.move_idx]
                 x1, y1, x2, y2 = self._move_delta_limit(
                     x - ix, y - iy, move_box)
-                self.boxes.append([
+                self.boxes.insert(self.move_idx, [
                     x1 / self.width, y1 / self.height, x2 / self.width,
                     y2 / self.height, label_idx
                 ])
@@ -374,10 +407,29 @@ class CLabeled:
 
     # 对选择的框进行删除
     def _delete_roi(self, event, x, y, flags, param):
+        global is_mouse_lb_down, highlight_idx
         dst = self.image.copy()
+        if highlight_idx >= 0:
+            self._draw_box_highlight_on_image(dst, self.boxes[highlight_idx])
         self._draw_box_on_image(dst, self.boxes)
         if event == cv2.EVENT_LBUTTONDOWN:  # 按下鼠标左键
+            ix, iy = self._roi_limit(x, y)
             self._event_lbuttondown(x, y, dst)
+            if x == ix and y == iy:
+                is_mouse_lb_down = True
+        # 鼠标左键松开, 高亮选中的框
+        elif event == cv2.EVENT_LBUTTONUP and is_mouse_lb_down:
+            x, y = self._roi_limit(x, y)
+            is_mouse_lb_down = False
+            highlight_idx = -1
+            if len(self.boxes):
+                highlight_idx = 0
+                if len(self.boxes) > 1:
+                    # 优先修改(中心点或左上点)距离当前鼠标最近的框的label_id
+                    sort_indices = self._get_sort_indices(x, y)
+                    highlight_idx = sort_indices[0]
+                if not self._point_in_box(x, y, self.boxes[highlight_idx]):
+                    highlight_idx = -1
         elif ("win32" in sys.platform and event == cv2.EVENT_RBUTTONDOWN) or (
                 sys.platform in ["linux", "darwin"]
                 and event == cv2.EVENT_LBUTTONDBLCLK):  # 删除(中心点或左上点)距离当前鼠标最近的框
@@ -393,6 +445,74 @@ class CLabeled:
                 del self.boxes[del_index]
                 self._draw_box_on_image(self.current_image, self.boxes)
                 self.operate_flag = True
+                highlight_idx = -1
+
+    # 对选择的框进行修正
+    def _fix_roi(self, event, x, y, flags, param):
+        global is_mouse_lb_down, highlight_idx, select_idx
+        box_border = round(self.width / 400)
+        dst = self.image.copy()
+        if highlight_idx >= 0:
+            self._draw_box_highlight_on_image(dst, self.boxes[highlight_idx])
+        self._draw_box_on_image(dst, self.boxes)
+        if flags == (cv2.EVENT_FLAG_LBUTTON + cv2.EVENT_FLAG_ALTKEY): # ALT + 按下鼠标左键
+            x, y = self._roi_limit(x, y)
+            if highlight_idx >= 0:
+                select_idx = self._draw_point_highlight_on_image(dst, self.boxes[highlight_idx], x, y)
+            cv2.line(dst, (x, 0), (x, self.height),
+                        self.colors[self.label_index], 1, 8)
+            cv2.line(dst, (0, y), (self.width, y),
+                        self.colors[self.label_index], 1, 8)
+            self._update_win_image(dst)
+            cv2.imshow(self.windows_name, self.win_image)
+        elif highlight_idx >= 0 and ("win32" in sys.platform and event == cv2.EVENT_RBUTTONDOWN) or (
+                sys.platform in ["linux", "darwin"] and event
+                == cv2.EVENT_LBUTTONDBLCLK):
+            x, y = self._roi_limit(x, y)
+            highlight_box = self.boxes[highlight_idx]
+            pt1 = (int(dst.shape[1] * highlight_box[0]), int(dst.shape[0] * highlight_box[1]))
+            pt2 = (int(dst.shape[1] * highlight_box[2]), int(dst.shape[0] * highlight_box[3]))
+            if select_idx == 0:
+                pt1 = (x, y)
+            elif select_idx == 1:
+                pt2 = (x, y)
+            if abs(pt1[0] - pt2[0]) > 10 and abs(pt1[1] - pt2[1]) > 10:
+                cv2.rectangle(self.current_image.copy(), pt1, pt2,
+                            self.colors[self.label_index], box_border)
+            select_idx = max(select_idx, 0)
+            self.boxes[highlight_idx][select_idx*2] = x / dst.shape[1]
+            self.boxes[highlight_idx][select_idx*2 + 1] = y / dst.shape[0]
+            self.boxes[highlight_idx] = self.box_fix(self.boxes[highlight_idx])
+            self._draw_box_on_image(self.current_image.copy(), self.boxes)
+            highlight_idx = -1
+            self.operate_flag = True
+        elif event == cv2.EVENT_LBUTTONDOWN:  # 按下鼠标左键
+            ix, iy = self._roi_limit(x, y)
+            self._event_lbuttondown(x, y, dst)
+            if x == ix and y == iy:
+                is_mouse_lb_down = True
+        # 鼠标移动
+        elif event == cv2.EVENT_MOUSEMOVE:
+            x, y = self._roi_limit(x, y)
+            cv2.line(dst, (x, 0), (x, self.height),
+                        self.colors[self.label_index], 1, 8)
+            cv2.line(dst, (0, y), (self.width, y),
+                        self.colors[self.label_index], 1, 8)
+            self._update_win_image(dst)
+            cv2.imshow(self.windows_name, self.win_image)
+        # 鼠标左键松开, 高亮选中的框
+        elif event == cv2.EVENT_LBUTTONUP and is_mouse_lb_down:
+            x, y = self._roi_limit(x, y)
+            is_mouse_lb_down = False
+            highlight_idx = -1
+            if len(self.boxes):
+                highlight_idx = 0
+                if len(self.boxes) > 1:
+                    # 优先修改(中心点或左上点)距离当前鼠标最近的框的label_id
+                    sort_indices = self._get_sort_indices(x, y)
+                    highlight_idx = sort_indices[0]
+                if not self._point_in_box(x, y, self.boxes[highlight_idx]):
+                    highlight_idx = -1
 
     # 恢复上一次删除的框
     def _undo_roi(self, event, x, y, flags, param):
@@ -440,6 +560,58 @@ class CLabeled:
         self._update_win_image(image)
         cv2.imshow(self.windows_name, self.win_image)
 
+    # 将标注框高亮显示到图像上
+    def _draw_box_highlight_on_image(self, image, box):
+        box_border = round(self.width / 400)
+        font_size = max(1, int(min(self.width, self.height) / 600))
+        pt1 = (int(image.shape[1] * box[0]), int(image.shape[0] * box[1]))
+        pt2 = (int(image.shape[1] * box[2]), int(image.shape[0] * box[3]))
+        if len(box) > 4:
+            label_id = box[4]
+        else:
+            label_id = 0
+        label_index = self.class_table.index(label_id)
+        cv2.rectangle(image, pt1, pt2, self.highlight_colors[0],
+                        box_border*4)
+        cv2.rectangle(image, pt1, pt2, self.colors[label_index],
+                        box_border)
+        if pt1[1] < 10:
+            cv2.putText(image, self.class_names[label_index],
+                    (pt1[0], pt1[1] + 10), self.font_type,
+                    min(font_size * 0.4,
+                        1.0), self.colors[label_index], font_size)
+        else:
+            cv2.putText(image,
+                    self.class_names[label_index], pt1, self.font_type,
+                    min(font_size * 0.4,
+                        1.0), self.colors[label_index], font_size)
+        self._update_win_image(image)
+        cv2.imshow(self.windows_name, self.win_image)
+    
+    # 将标注框上选择的点高亮显示到图像上
+    def _draw_point_highlight_on_image(self, image, box, x=None, y=None):
+        box_border = round(self.width / 400)
+        font_size = max(1, int(min(self.width, self.height) / 600))
+        select_idx = 0
+        pt1 = (box[0], box[1])
+        pt2 = (box[2], box[3])
+        if x is not None and y is not None:
+            current_select_point = np.array([pt1, pt2])
+            current_point = np.array([x / self.width, y / self.height])
+            square1 = np.sum(np.square(current_select_point), axis=1)
+            square2 = np.sum(np.square(current_point), axis=0)
+            squared_dist = - 2 * \
+                np.matmul(current_select_point,
+                            current_point.T) + square1 + square2
+            sort_indices = np.argsort(squared_dist)
+            select_idx = sort_indices[0]
+        select_point = pt1 if select_idx == 0 else pt2
+        select_point = (int(image.shape[1] * select_point[0]), int(image.shape[0] * select_point[1]))
+        cv2.circle(image, select_point, 5, self.highlight_colors[1], -1, cv2.LINE_AA)
+        self._update_win_image(image)
+        cv2.imshow(self.windows_name, self.win_image)
+        return select_idx
+    
     # 更新整个窗口的显示
     def _update_win_image(self, image):
         per_class_h = int(min(self.height, 600) / (self.class_num + 2))
@@ -456,6 +628,8 @@ class CLabeled:
                 show_msg = " + : move"
             elif self.class_names[idx] == "undo":
                 show_msg = " Backspace : undo"
+            elif self.class_names[idx] == "fix":
+                show_msg = " \| : fix"
             cv2.putText(self.win_image, show_msg,
                         (self.width + 5, (idx + 1) * per_class_h),
                         self.font_type,
@@ -573,6 +747,8 @@ class CLabeled:
                 cv2.setMouseCallback(self.windows_name, self._delete_roi)
             elif self.class_names[self.label_index] == "undo":
                 cv2.setMouseCallback(self.windows_name, self._undo_roi)
+            elif self.class_names[self.label_index] == "fix":
+                cv2.setMouseCallback(self.windows_name, self._fix_roi)
             else:
                 cv2.setMouseCallback(self.windows_name, self._draw_roi)
             # key = cv2.waitKey(self.decay_time)
@@ -589,13 +765,16 @@ class CLabeled:
                 self.label_index = min(9, self.class_num - 1)
                 continue
             if key == 8:  # Backspace
-                self.label_index = self.class_num - 1
+                self.label_index = self.class_names.index("undo")
                 continue
             if key == 45:  # 按键 _-
                 self.label_index = self.class_names.index("delete")
                 continue
             if key == 61 or key == 43:  # 按键 =+
                 self.label_index = self.class_names.index("move")
+                continue
+            if key == 92 or key == 47:  # 按键 \|
+                self.label_index = self.class_names.index("fix")
                 continue
             if key == 32:
                 self.auto_play_flag = not self.auto_play_flag

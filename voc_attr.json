@@ -3,7 +3,7 @@
     "dataset_path": "data",
     "decay_time": 1000,
     "pixel_size": 1920,
-    "delete_type": 0,
+    "select_type": 0,
     "total_class_names": [
         "aeroplane",
         "bicycle",
