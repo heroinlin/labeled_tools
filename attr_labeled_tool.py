@@ -571,6 +571,8 @@ class CLabeled:
         if highlight_idx >= 0:
             self._draw_box_highlight_on_image(dst, self.boxes[highlight_idx])
         self._draw_box_on_image(dst, self.boxes)
+        if highlight_idx >= 0:
+            self._draw_point_highlight_on_image(dst, self.boxes[highlight_idx], select_idx=max(select_idx, 0))
         # ALT + 按下鼠标左键
         if flags == (cv2.EVENT_FLAG_LBUTTON + cv2.EVENT_FLAG_ALTKEY):
             x, y = self._roi_limit(x, y)
@@ -712,10 +714,9 @@ class CLabeled:
         cv2.imshow(self.windows_name, self.win_image)
 
     # 将标注框上选择的点高亮显示到图像上
-    def _draw_point_highlight_on_image(self, image, box, x=None, y=None):
+    def _draw_point_highlight_on_image(self, image, box, x=None, y=None, select_idx=0):
         box_border = round(self.width / 400)
         font_size = max(1, int(min(self.width, self.height) / 600))
-        select_idx = 0
         pt1 = (box[0], box[1])
         pt2 = (box[2], box[3])
         if x is not None and y is not None:
