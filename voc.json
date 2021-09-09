@@ -4,6 +4,7 @@
     "decay_time": 1000,
     "pixel_size": 1920,
     "select_type": 0,
+    "checkpoint_name": "checkpoint",
     "total_class_names": [
         "aeroplane",
         "bicycle",

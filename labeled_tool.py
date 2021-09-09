@@ -365,7 +365,7 @@ class CLabeled:
         elif event == cv2.EVENT_MOUSEMOVE and (flags
                                                and cv2.EVENT_FLAG_LBUTTON):
             x, y = self._roi_limit(x, y)
-            if len(self.boxes):
+            if len(self.boxes) and is_mouse_lb_down:
                 if len(self.boxes) > 1 and self.move_idx == -1:
                     sort_indices = self._get_sort_indices(x, y)
                     self.move_idx = sort_indices[0]
@@ -465,6 +465,19 @@ class CLabeled:
                         self.colors[self.label_index], 1, 8)
             cv2.line(dst, (0, y), (self.width, y),
                         self.colors[self.label_index], 1, 8)
+            self._update_win_image(dst)
+            cv2.imshow(self.windows_name, self.win_image)
+        # 按下鼠标中键切换高亮点
+        elif flags == (cv2.EVENT_FLAG_MBUTTON):
+            x, y = self._roi_limit(x, y)
+            if highlight_idx >= 0:
+                select_idx = int(not max(select_idx, 0))
+                self._draw_point_highlight_on_image(
+                    dst, self.boxes[highlight_idx], select_idx=select_idx)
+            cv2.line(dst, (x, 0), (x, self.height),
+                     self.colors[self.label_index], 1, 8)
+            cv2.line(dst, (0, y), (self.width, y),
+                     self.colors[self.label_index], 1, 8)
             self._update_win_image(dst)
             cv2.imshow(self.windows_name, self.win_image)
         elif highlight_idx >= 0 and ("win32" in sys.platform and event == cv2.EVENT_RBUTTONDOWN) or (
@@ -832,6 +845,7 @@ def parse_args():
     task.default_decay_time = int(cfgs.get("decay_time", 1000))
     task.pixel_size = int(cfgs.get("pixel_size", 1920))
     task.select_type = int(cfgs.get("select_type", 0))
+    task.checkpoint_path = os.path.join(dataset_path, cfgs.get("checkpoint_name", "checkpoint"))
     return task
 
 
