@@ -35,6 +35,7 @@ python labeled_tool.py -c voc.json
 * 撤销当前删除
 * 类别过滤标注
 * 鼠标右键单击切换id
+* 鼠标点击进行上下图切换
 
 ## 说明
 
@@ -241,6 +242,7 @@ python attr_labeled_tool.py -c voc_attr.json
 * 类别过滤标注
 * 鼠标右键单击切换id
 * 属性标注
+* 鼠标点击进行上下图切换
 
 ## 说明
 
@@ -313,12 +315,13 @@ python attr_labeled_tool.py -c voc_attr.json
   ​             \- labels  (可选)
 
   * decay_time: 自动播放等待时间， 单位ms
-* pixel_size： 图像显示最大像素
+  
+  * pixel_size： 图像显示最大像素
   * select_type： 选择框模式，默认取离左上点最近框, 取值为1可改为取离中心最近框
-* checkpoint_name: 已标注记录文件, 用来支持多人同时标注
+  * checkpoint_name: 已标注记录文件, 用来支持多人同时标注
   * total_class_names： 标注所有类别列表
   * class_names： 当前标注只展示的类别列表
   * colors: 标注颜色列表
-* attrs： 标注所有属性列表
+  * attrs： 标注所有属性列表
 
 > 注： 属性框id从1开始记， 0保留为非目标对象的标识。如对person的gender属性进行标注，gender为male记为1， 而该图中存在其他类别(如dog), 该类别在gender属性位记为0.

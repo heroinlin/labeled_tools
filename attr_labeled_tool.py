@@ -11,6 +11,7 @@ import numpy as np
 import cv2
 import argparse
 from collections import OrderedDict
+from pynput.keyboard import Key, Controller
 """
 图像目标框属性附加标注脚本
 Author: Heroinlj
@@ -145,6 +146,8 @@ class CLabeled:
         # 删除选框方式, 默认左上点, 1为中心点
         self.select_type = 0
         self._may_make_dir()
+        # 模拟按键事件
+        self.keyboard = Controller()
 
     # 重置
     def _reset(self):
@@ -285,9 +288,18 @@ class CLabeled:
         highlight_idx = -1
         if self.width < x <= (self.width +
                               self.class_width) and 0 <= y <= self.height:
-            per_class_h = int(min(self.height, 600) / (self.class_num + 2))
-            self.label_index = min(max(int((y - 5) / per_class_h), 0),
-                                   self.class_num - 1)
+            per_class_h = int(min(self.height, 2000) / (self.class_num + 3))
+            select_mode = max(int((y - 5) / per_class_h), 0)
+            if select_mode > self.class_num:
+                if (x - self.width) < self.class_width / 2:
+                    self.keyboard.press('a')
+                    self.keyboard.release('a')
+                elif (x - self.width) >= self.class_width / 2:
+                    self.keyboard.press('d')
+                    self.keyboard.release('d')
+            else:
+                self.label_index = min(select_mode,
+                                    self.class_num - 1)
         x, y = self._roi_limit(x, y)
         self._update_win_image(dst)
         cv2.imshow(self.windows_name, self.win_image)
@@ -754,7 +766,7 @@ class CLabeled:
 
     # 更新整个窗口的显示
     def _update_win_image(self, image):
-        per_class_h = int(min(self.height, 600) / (self.class_num + 2))
+        per_class_h = int(min(self.height, 2000) / (self.class_num + 3))
         font_size = max(1, int(min(self.width, self.height) / 600))
         self.win_image = np.zeros(
             [self.height, self.class_width + self.width, 3], dtype=np.uint8)
@@ -783,6 +795,14 @@ class CLabeled:
                     f"{self.current_label_index}/{self.total_image_number}",
                     (self.width + 5, (idx + 2) * per_class_h), self.font_type,
                     min(font_size * 0.4, 1.0), (0, 0, 0), font_size)
+        cv2.putText(self.win_image,
+                    f"PgUp",
+                    (self.width + 5, (idx + 3) * per_class_h), self.font_type,
+                    min(font_size * 0.4, 1.0), (0, 0, 255), font_size)
+        cv2.putText(self.win_image,
+                    f"PgDown",
+                    (self.width + self.class_width//2, (idx + 3) * per_class_h), self.font_type,
+                    min(font_size * 0.4, 1.0), (0, 255, 0), font_size)
 
         self.win_image[:, :self.width, :] = image
 
