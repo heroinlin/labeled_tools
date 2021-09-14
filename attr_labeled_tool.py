@@ -96,7 +96,7 @@ class CLabeled:
         self.boxes = list()
         # 标注属性信息
         self.attrs = list()
-        # 缓存被删除的框，以进行恢复
+        # 缓存上次操作的框，以进行恢复
         self.undo_boxes = []
         # 记录撤销操作的最大个数
         self.undo_boxes_max_len = 10
@@ -166,6 +166,7 @@ class CLabeled:
         self.boxes = list()
         self.attrs = list()
         self.operate_flag = False
+        self.undo_boxes = []
         self.move_idx = -1
 
     # 参数检查，确保代码可运行
@@ -1059,13 +1060,11 @@ class CLabeled:
                 break
             if key == ord('d') or key == ord('D') or key == 2555904:  # 前进一张
                 self.current_label_index += 1
-                self.undo_boxes = []
                 continue
             # if key in [0, 16, 17, 20, 65505, 65513]:
             #     continue
             if self.auto_play_flag:
                 self.current_label_index += 1
-                self.undo_boxes = []
 
 
 def parse_args():

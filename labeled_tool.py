@@ -150,6 +150,7 @@ class CLabeled:
         self.label_path = None
         self.boxes = list()
         self.operate_flag = False
+        self.undo_boxes = []
 
     # 参数检查，确保代码可运行
     def _check(self):
@@ -854,13 +855,11 @@ class CLabeled:
                 break
             if key == ord('d') or key == ord('D') or key == 2555904:  # 前进一张
                 self.current_label_index += 1
-                self.undo_boxes = []
                 continue
             # if key in [0, 16, 17, 20, 65505, 65513]:
             #     continue
             if self.auto_play_flag:
                 self.current_label_index += 1
-                self.undo_boxes = []
 
 
 def parse_args():
