@@ -31,6 +31,8 @@ python labeled_tool.py -c voc.json
 * 目标框标注
 * 目标框删除
 * 目标框移动
+* 目标框修正
+* 目标框高亮
 * 目标框标注id修改
 * 撤销当前操作
 * 类别过滤标注
@@ -237,6 +239,8 @@ python attr_labeled_tool.py -c voc_attr.json
 * 目标框标注
 * 目标框删除
 * 目标框移动
+* 目标框修正
+* 目标框高亮
 * 目标框标注id修改
 * 撤销当前操作
 * 类别过滤标注
