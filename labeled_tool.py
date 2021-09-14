@@ -40,10 +40,11 @@ Author: Heroinlj
         鼠标左键点击, 高亮离当前鼠标位置最近的框
         鼠标左键拖动来移动目标框，移动离当前鼠标位置最近的框
     撤销模式:
-        Windows鼠标右键(Linux, Mac左键双击)撤销删除操作, 撤销对当前图片的一次删除操作
+        Windows鼠标右键(Linux, Mac左键双击)撤销操作, 撤销对当前图片的一次操作, 可自定义设置最大撤销记录个数，默认为10
     修正模式：
         鼠标左键点击, 高亮离当前鼠标位置最近的框
         按住Alt的同时鼠标左键点击, 高亮所选框最近的顶点(左上点或右下点)
+​        单击鼠标中键切换高亮的点
         在高亮的情况下, Windows鼠标右键(Linux, Mac左键双击), 修正所选点的位置
 参数文件说明：
     可在对应参数文件(如teller.json)中设置参数
@@ -55,6 +56,7 @@ Author: Heroinlj
     decay_time: 自动播放等待时间， 单位ms
     pixel_size： 图像显示最大像素
     select_type： 选择框模式，默认取离左上点最近框, 取值为1可改为取离中心最近框
+    checkpoint_name: 已标注记录文件, 用来支持多人同时标注
     total_class_names： 标注所有类别列表
     class_names： 当前标注只展示的类别列表
     colors: 标注颜色列表
@@ -88,6 +90,8 @@ class CLabeled:
         self.boxes = list()
         # 缓存被删除的框，以进行恢复
         self.undo_boxes = []
+        # 记录撤销操作的最大个数
+        self.undo_boxes_max_len = 10
         # 过滤不显示的框
         self.fliter_boxes = []
         # 是否保存过滤的框
@@ -323,6 +327,9 @@ class CLabeled:
             self._update_win_image(dst)
             cv2.imshow(self.windows_name, self.win_image)
         elif event == cv2.EVENT_LBUTTONUP and is_mouse_lb_down:  # 鼠标左键松开
+            if len(self.undo_boxes) > self.undo_boxes_max_len:
+                del self.undo_boxes[0]
+            self.undo_boxes.append(self.boxes.copy())
             x, y = self._roi_limit(x, y)
             if mode:
                 if abs(x - ix) > 10 and abs(y - iy) > 10:
@@ -347,6 +354,9 @@ class CLabeled:
         elif ("win32" in sys.platform and event == cv2.EVENT_RBUTTONDOWN) or (
                 sys.platform in ["linux", "darwin"] and event
                 == cv2.EVENT_LBUTTONDBLCLK):  # 修改(中心点或左上点)距离当前鼠标最近的框的label_id
+            if len(self.undo_boxes) > self.undo_boxes_max_len:
+                del self.undo_boxes[0]
+            self.undo_boxes.append(self.boxes.copy())
             x, y = self._roi_limit(x, y)
             self.current_image = self.image.copy()
             change_idx = 0
@@ -355,10 +365,11 @@ class CLabeled:
                     # 优先修改(中心点或左上点)距离当前鼠标最近的框的label_id
                     sort_indices = self._get_sort_indices(x, y)
                     change_idx = sort_indices[0]
-                if self._point_in_box(x, y, self.boxes[change_idx]):
+                change_box = self.boxes[change_idx].copy()
+                if self._point_in_box(x, y, change_box):
                     label_id = self.class_table[self.label_index]
-                    self.boxes[change_idx][4] = label_id
-                    self._draw_box_on_image(self.current_image, self.boxes)
+                    change_box[4] = label_id
+                    self.boxes[change_idx] = change_box
                 self.operate_flag = True
 
     # 对选择的框进行移动
@@ -404,6 +415,9 @@ class CLabeled:
                 if not self._point_in_box(x, y, self.boxes[highlight_idx]):
                     highlight_idx = -1
             if move_box is not None:
+                if len(self.undo_boxes) > self.undo_boxes_max_len:
+                    del self.undo_boxes[0]
+                self.undo_boxes.append(self.boxes.copy())
                 label_idx = self.boxes[self.move_idx][4]
                 del self.boxes[self.move_idx]
                 x1, y1, x2, y2 = self._move_delta_limit(
@@ -453,7 +467,9 @@ class CLabeled:
                     # 优先删除(中心点或左上点)距离当前鼠标最近的当前类别框
                     sort_indices = self._get_sort_indices(x, y)
                     del_index = sort_indices[0]
-                self.undo_boxes.append(self.boxes[del_index])
+                if len(self.undo_boxes) > self.undo_boxes_max_len:
+                    del self.undo_boxes[0]
+                self.undo_boxes.append(self.boxes.copy())
                 del self.boxes[del_index]
                 self._draw_box_on_image(self.current_image, self.boxes)
                 self.operate_flag = True
@@ -495,6 +511,9 @@ class CLabeled:
         elif highlight_idx >= 0 and ("win32" in sys.platform and event == cv2.EVENT_RBUTTONDOWN) or (
                 sys.platform in ["linux", "darwin"] and event
                 == cv2.EVENT_LBUTTONDBLCLK):
+            if len(self.undo_boxes) > self.undo_boxes_max_len:
+                del self.undo_boxes[0]
+            self.undo_boxes.append(self.boxes.copy())
             x, y = self._roi_limit(x, y)
             highlight_box = self.boxes[highlight_idx]
             pt1 = (int(dst.shape[1] * highlight_box[0]), int(dst.shape[0] * highlight_box[1]))
@@ -507,9 +526,11 @@ class CLabeled:
                 cv2.rectangle(self.current_image.copy(), pt1, pt2,
                             self.colors[self.label_index], box_border)
             select_idx = max(select_idx, 0)
-            self.boxes[highlight_idx][select_idx*2] = x / dst.shape[1]
-            self.boxes[highlight_idx][select_idx*2 + 1] = y / dst.shape[0]
-            self.boxes[highlight_idx] = self.box_fix(self.boxes[highlight_idx])
+            fix_box = self.boxes[highlight_idx].copy()
+            fix_box[select_idx * 2] = x / dst.shape[1]
+            fix_box[select_idx * 2 + 1] = y / dst.shape[0]
+            fix_box = self.box_fix(fix_box)
+            self.boxes[highlight_idx] = fix_box
             self._draw_box_on_image(self.current_image.copy(), self.boxes)
             highlight_idx = -1
             self.operate_flag = True
@@ -553,7 +574,7 @@ class CLabeled:
             x, y = self._roi_limit(x, y)
             self.current_image = self.image.copy()
             if len(self.undo_boxes):
-                self.boxes.append(self.undo_boxes[-1])
+                self.boxes = self.undo_boxes[-1]
                 del self.undo_boxes[-1]
                 self.operate_flag = True
             self._draw_box_on_image(self.current_image, self.boxes)

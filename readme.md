@@ -32,7 +32,7 @@ python labeled_tool.py -c voc.json
 * 目标框删除
 * 目标框移动
 * 目标框标注id修改
-* 撤销当前删除
+* 撤销当前操作
 * 类别过滤标注
 * 鼠标右键单击切换id
 * 鼠标点击进行上下图切换
@@ -77,7 +77,7 @@ python labeled_tool.py -c voc.json
 
   * 撤销模式:
 
-    ​    Windows鼠标右键(Linux, Mac左键双击)撤销删除操作, 撤销对当前图片的一次删除操作
+    ​    Windows鼠标右键(Linux, Mac左键双击)撤销操作, 撤销对当前图片的一次操作, 可自定义设置最大撤销记录个数，默认为10
 
   * 修正模式：
 
@@ -138,7 +138,7 @@ python segment_tool.py -c voc.json
 * 掩码标注
 * 掩码擦除
 * 改变涂抹范围大小
-* 撤销当前删除
+* 撤销当前操作
 * 恢复到上一次删除
 * 重置掩码
 * 区域内重置掩码
@@ -238,7 +238,7 @@ python attr_labeled_tool.py -c voc_attr.json
 * 目标框删除
 * 目标框移动
 * 目标框标注id修改
-* 撤销当前删除
+* 撤销当前操作
 * 类别过滤标注
 * 鼠标右键单击切换id
 * 属性标注
@@ -288,7 +288,7 @@ python attr_labeled_tool.py -c voc_attr.json
 
   * 撤销模式:
 
-    ​    Windows鼠标右键(Linux, Mac左键双击)撤销删除操作, 撤销对当前图片的一次删除操作
+    ​    Windows鼠标右键(Linux, Mac左键双击)撤销操作, 撤销对当前图片的一次操作, 可自定义设置最大撤销记录个数，默认为10
 
   * 修正模式：
 
