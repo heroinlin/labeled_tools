@@ -50,7 +50,7 @@ Author: Heroinlj
 ​        单击鼠标中键切换高亮的点
         在高亮的情况下, Windows鼠标右键(Linux, Mac左键双击), 修正所选点的位置
 参数文件说明：
-    可在对应参数文件(如teller_attr.json)中设置参数
+    可在对应参数文件(如voc_attr.json)中设置参数
     windows_name： 标注程序窗口命名
     dataset_path： 标注数据文件夹路径, 路径下格式为
                    - dataset_path
@@ -166,7 +166,6 @@ class CLabeled:
         self.boxes = list()
         self.attrs = list()
         self.operate_flag = False
-        self.undo_boxes = []
         self.move_idx = -1
 
     # 参数检查，确保代码可运行
@@ -373,6 +372,7 @@ class CLabeled:
                         ix / self.width, iy / self.height, x / self.width,
                         y / self.height, label_id
                     ]
+                    box = self.box_fix(box)
                     if self.attr_flag:
                         box.extend([0] * len(self.attrs_dict))
                     self.boxes.append(box)
@@ -462,6 +462,7 @@ class CLabeled:
                         ix / self.width, iy / self.height, x / self.width,
                         y / self.height, label_id
                     ]
+                    box = self.box_fix(box)
                     box.extend([0] * len(self.attrs_dict))
                     box[4 + self.attr_type_idx] = self.label_index + 1
                     self.boxes.append(box)
@@ -945,6 +946,7 @@ class CLabeled:
         self._check()
         self.images_list = sorted(
             glob.glob("{}/*/*.[jp][pn]g".format(self.image_folder)))
+        self.images_list = [image_path.replace("_fix", "") for image_path in self.images_list]
         self._compute_total_image_number()
         print("需要标注的图片总数为： ", self.total_image_number)
         if os.path.exists(self.checkpoint_path):
@@ -1029,6 +1031,7 @@ class CLabeled:
                 self.decay_time = self.default_decay_time if self.auto_play_flag else 0
             if key == ord('a') or key == ord('A') or key == 2424832:  # 后退一张
                 self._backward()
+                self.undo_boxes = []
                 continue
             if key == ord('w') or key == ord('W') or key == 2490368:
                 self.label_index = max(0, self.label_index - 1)
@@ -1060,10 +1063,13 @@ class CLabeled:
                 break
             if key == ord('d') or key == ord('D') or key == 2555904:  # 前进一张
                 self.current_label_index += 1
+                # 不在 self._reset()中是为了避免其他按键导致撤销失效
+                self.undo_boxes = [] 
                 continue
             # if key in [0, 16, 17, 20, 65505, 65513]:
             #     continue
             if self.auto_play_flag:
+                self.undo_boxes = []
                 self.current_label_index += 1
 
 

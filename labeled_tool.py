@@ -47,7 +47,7 @@ Author: Heroinlj
 ​        单击鼠标中键切换高亮的点
         在高亮的情况下, Windows鼠标右键(Linux, Mac左键双击), 修正所选点的位置
 参数文件说明：
-    可在对应参数文件(如teller.json)中设置参数
+    可在对应参数文件(如voc.json)中设置参数
     windows_name： 标注程序窗口命名
     dataset_path： 标注数据文件夹路径, 路径下格式为
                    - dataset_path
@@ -150,7 +150,6 @@ class CLabeled:
         self.label_path = None
         self.boxes = list()
         self.operate_flag = False
-        self.undo_boxes = []
 
     # 参数检查，确保代码可运行
     def _check(self):
@@ -274,8 +273,7 @@ class CLabeled:
                     self.keyboard.press('d')
                     self.keyboard.release('d')
             else:
-                self.label_index = min(select_mode,
-                                    self.class_num - 1)
+                self.label_index = min(select_mode, self.class_num - 1)
         x, y = self._roi_limit(x, y)
         self._update_win_image(dst)
         cv2.imshow(self.windows_name, self.win_image)
@@ -337,10 +335,12 @@ class CLabeled:
                     cv2.rectangle(self.current_image, (ix, iy), (x, y),
                                   self.colors[self.label_index], box_border)
                     label_id = self.class_table[self.label_index]
-                    self.boxes.append([
+                    box = [
                         ix / self.width, iy / self.height, x / self.width,
                         y / self.height, label_id
-                    ])
+                    ]
+                    box = self.box_fix(box)
+                    self.boxes.append(box)
             else:
                 cv2.circle(self.current_image, (x, y), 5, (0, 0, 255), -1)
             # print(self.boxes)
@@ -485,15 +485,19 @@ class CLabeled:
             self._draw_box_highlight_on_image(dst, self.boxes[highlight_idx])
         self._draw_box_on_image(dst, self.boxes)
         if highlight_idx >= 0:
-            self._draw_point_highlight_on_image(dst, self.boxes[highlight_idx], select_idx=max(select_idx, 0))
-        if flags == (cv2.EVENT_FLAG_LBUTTON + cv2.EVENT_FLAG_ALTKEY): # ALT + 按下鼠标左键
+            self._draw_point_highlight_on_image(dst,
+                                                self.boxes[highlight_idx],
+                                                select_idx=max(select_idx, 0))
+        if flags == (cv2.EVENT_FLAG_LBUTTON +
+                     cv2.EVENT_FLAG_ALTKEY):  # ALT + 按下鼠标左键
             x, y = self._roi_limit(x, y)
             if highlight_idx >= 0:
-                select_idx = self._draw_point_highlight_on_image(dst, self.boxes[highlight_idx], x, y)
+                select_idx = self._draw_point_highlight_on_image(
+                    dst, self.boxes[highlight_idx], x, y)
             cv2.line(dst, (x, 0), (x, self.height),
-                        self.colors[self.label_index], 1, 8)
+                     self.colors[self.label_index], 1, 8)
             cv2.line(dst, (0, y), (self.width, y),
-                        self.colors[self.label_index], 1, 8)
+                     self.colors[self.label_index], 1, 8)
             self._update_win_image(dst)
             cv2.imshow(self.windows_name, self.win_image)
         # 按下鼠标中键切换高亮点
@@ -501,31 +505,35 @@ class CLabeled:
             x, y = self._roi_limit(x, y)
             if highlight_idx >= 0:
                 select_idx = int(not max(select_idx, 0))
-                self._draw_point_highlight_on_image(
-                    dst, self.boxes[highlight_idx], select_idx=select_idx)
+                self._draw_point_highlight_on_image(dst,
+                                                    self.boxes[highlight_idx],
+                                                    select_idx=select_idx)
             cv2.line(dst, (x, 0), (x, self.height),
                      self.colors[self.label_index], 1, 8)
             cv2.line(dst, (0, y), (self.width, y),
                      self.colors[self.label_index], 1, 8)
             self._update_win_image(dst)
             cv2.imshow(self.windows_name, self.win_image)
-        elif highlight_idx >= 0 and ("win32" in sys.platform and event == cv2.EVENT_RBUTTONDOWN) or (
-                sys.platform in ["linux", "darwin"] and event
-                == cv2.EVENT_LBUTTONDBLCLK):
+        elif highlight_idx >= 0 and ("win32" in sys.platform
+                                     and event == cv2.EVENT_RBUTTONDOWN) or (
+                                         sys.platform in ["linux", "darwin"]
+                                         and event == cv2.EVENT_LBUTTONDBLCLK):
             if len(self.undo_boxes) > self.undo_boxes_max_len:
                 del self.undo_boxes[0]
             self.undo_boxes.append(self.boxes.copy())
             x, y = self._roi_limit(x, y)
             highlight_box = self.boxes[highlight_idx]
-            pt1 = (int(dst.shape[1] * highlight_box[0]), int(dst.shape[0] * highlight_box[1]))
-            pt2 = (int(dst.shape[1] * highlight_box[2]), int(dst.shape[0] * highlight_box[3]))
+            pt1 = (int(dst.shape[1] * highlight_box[0]),
+                   int(dst.shape[0] * highlight_box[1]))
+            pt2 = (int(dst.shape[1] * highlight_box[2]),
+                   int(dst.shape[0] * highlight_box[3]))
             if select_idx == 0:
                 pt1 = (x, y)
             elif select_idx == 1:
                 pt2 = (x, y)
             if abs(pt1[0] - pt2[0]) > 10 and abs(pt1[1] - pt2[1]) > 10:
                 cv2.rectangle(self.current_image.copy(), pt1, pt2,
-                            self.colors[self.label_index], box_border)
+                              self.colors[self.label_index], box_border)
             select_idx = max(select_idx, 0)
             fix_box = self.boxes[highlight_idx].copy()
             fix_box[select_idx * 2] = x / dst.shape[1]
@@ -544,9 +552,9 @@ class CLabeled:
         elif event == cv2.EVENT_MOUSEMOVE:
             x, y = self._roi_limit(x, y)
             cv2.line(dst, (x, 0), (x, self.height),
-                        self.colors[self.label_index], 1, 8)
+                     self.colors[self.label_index], 1, 8)
             cv2.line(dst, (0, y), (self.width, y),
-                        self.colors[self.label_index], 1, 8)
+                     self.colors[self.label_index], 1, 8)
             self._update_win_image(dst)
             cv2.imshow(self.windows_name, self.win_image)
         # 鼠标左键松开, 高亮选中的框
@@ -598,14 +606,14 @@ class CLabeled:
                           box_border)
             if pt1[1] < 10:
                 cv2.putText(image, self.class_names[label_index],
-                        (pt1[0], pt1[1] + 10), self.font_type,
-                        min(font_size * 0.4,
-                            1.0), self.colors[label_index], font_size)
+                            (pt1[0], pt1[1] + 10), self.font_type,
+                            min(font_size * 0.4,
+                                1.0), self.colors[label_index], font_size)
             else:
                 cv2.putText(image,
-                        self.class_names[label_index], pt1, self.font_type,
-                        min(font_size * 0.4,
-                            1.0), self.colors[label_index], font_size)
+                            self.class_names[label_index], pt1, self.font_type,
+                            min(font_size * 0.4,
+                                1.0), self.colors[label_index], font_size)
         self._update_win_image(image)
         cv2.imshow(self.windows_name, self.win_image)
 
@@ -621,24 +629,28 @@ class CLabeled:
             label_id = 0
         label_index = self.class_table.index(label_id)
         cv2.rectangle(image, pt1, pt2, self.highlight_colors[0],
-                        box_border*4)
-        cv2.rectangle(image, pt1, pt2, self.colors[label_index],
-                        box_border)
+                      box_border * 4)
+        cv2.rectangle(image, pt1, pt2, self.colors[label_index], box_border)
         if pt1[1] < 10:
             cv2.putText(image, self.class_names[label_index],
-                    (pt1[0], pt1[1] + 10), self.font_type,
-                    min(font_size * 0.4,
-                        1.0), self.colors[label_index], font_size)
+                        (pt1[0], pt1[1] + 10), self.font_type,
+                        min(font_size * 0.4,
+                            1.0), self.colors[label_index], font_size)
         else:
             cv2.putText(image,
-                    self.class_names[label_index], pt1, self.font_type,
-                    min(font_size * 0.4,
-                        1.0), self.colors[label_index], font_size)
+                        self.class_names[label_index], pt1, self.font_type,
+                        min(font_size * 0.4,
+                            1.0), self.colors[label_index], font_size)
         self._update_win_image(image)
         cv2.imshow(self.windows_name, self.win_image)
-    
+
     # 将标注框上选择的点高亮显示到图像上
-    def _draw_point_highlight_on_image(self, image, box, x=None, y=None, select_idx=0):
+    def _draw_point_highlight_on_image(self,
+                                       image,
+                                       box,
+                                       x=None,
+                                       y=None,
+                                       select_idx=0):
         box_border = round(self.width / 400)
         font_size = max(1, int(min(self.width, self.height) / 600))
         pt1 = (box[0], box[1])
@@ -654,20 +666,27 @@ class CLabeled:
             sort_indices = np.argsort(squared_dist)
             select_idx = sort_indices[0]
         select_point = pt1 if select_idx == 0 else pt2
-        select_point = (int(image.shape[1] * select_point[0]), int(image.shape[0] * select_point[1]))
-        cv2.circle(image, select_point, 5, self.highlight_colors[1], -1, cv2.LINE_AA)
+        select_point = (int(image.shape[1] * select_point[0]),
+                        int(image.shape[0] * select_point[1]))
+        cv2.circle(image, select_point, 5, self.highlight_colors[1], -1,
+                   cv2.LINE_AA)
         self._update_win_image(image)
         cv2.imshow(self.windows_name, self.win_image)
         return select_idx
-    
+
     # 更新整个窗口的显示
     def _update_win_image(self, image):
         per_class_h = int(min(self.height, 2000) / (self.class_num + 3))
         font_size = max(1, int(min(self.width, self.height) / 600))
         self.win_image = np.zeros(
             [self.height, self.class_width + self.width, 3], dtype=np.uint8)
-        self.win_image[:, self.width:self.width+self.class_width, :] = 255
-        self.win_image[(self.label_index+1)*per_class_h - min(per_class_h, 10):5+(self.label_index+1)*per_class_h, self.width:self.width+self.class_width] = [255, 245, 152]
+        self.win_image[:, self.width:self.width + self.class_width, :] = 255
+        self.win_image[(self.label_index + 1) * per_class_h -
+                       min(per_class_h, 10):5 +
+                       (self.label_index + 1) * per_class_h,
+                       self.width:self.width + self.class_width] = [
+                           255, 245, 152
+                       ]
         for idx in range(self.class_num):
             show_msg = str(idx + 1) + ": " + self.class_names[idx]
             if self.class_names[idx] == "delete":
@@ -680,24 +699,18 @@ class CLabeled:
                 show_msg = " \| : fix"
             cv2.putText(self.win_image, show_msg,
                         (self.width + 5, (idx + 1) * per_class_h),
-                        self.font_type,
-                        min(font_size * 0.4,1.0),
-                        self.colors[idx],
-                        font_size)
+                        self.font_type, min(font_size * 0.4,
+                                            1.0), self.colors[idx], font_size)
         cv2.putText(self.win_image,
                     f"{self.current_label_index}/{self.total_image_number}",
-                    (self.width + 5, (idx + 2) * per_class_h),
-                    self.font_type,
-                    min(font_size * 0.4, 1.0),
-                    (0, 0, 0),
-                    font_size)
-        cv2.putText(self.win_image,
-                    f"PgUp",
+                    (self.width + 5, (idx + 2) * per_class_h), self.font_type,
+                    min(font_size * 0.4, 1.0), (0, 0, 0), font_size)
+        cv2.putText(self.win_image, f"PgUp",
                     (self.width + 5, (idx + 3) * per_class_h), self.font_type,
                     min(font_size * 0.4, 1.0), (0, 0, 255), font_size)
-        cv2.putText(self.win_image,
-                    f"PgDown",
-                    (self.width + self.class_width//2, (idx + 3) * per_class_h), self.font_type,
+        cv2.putText(self.win_image, f"PgDown",
+                    (self.width + self.class_width // 2,
+                     (idx + 3) * per_class_h), self.font_type,
                     min(font_size * 0.4, 1.0), (0, 255, 0), font_size)
         self.win_image[:, :self.width, :] = image
 
@@ -710,8 +723,10 @@ class CLabeled:
             for line in label_file:
                 if len(line.strip().split()) > 4:
                     begin_index = 1
-                x, y, w, h = [float(e) for e in line.strip().split()][begin_index: begin_index + 4]
-                label_id = int(line.strip().split()[0]) if begin_index == 1 else 0
+                x, y, w, h = [float(e) for e in line.strip().split()
+                              ][begin_index:begin_index + 4]
+                label_id = int(
+                    line.strip().split()[0]) if begin_index == 1 else 0
                 x1 = x - w / 2
                 y1 = y - h / 2
                 x2 = x + w / 2
@@ -765,6 +780,9 @@ class CLabeled:
         self._check()
         self.images_list = sorted(
             glob.glob("{}/*/*.jpg".format(self.image_folder)))
+        # self.images_list = [
+        #     image_path.replace("_fix", "") for image_path in self.images_list
+        # ]
         self._compute_total_image_number()
         print("需要标注的图片总数为： ", self.total_image_number)
         if os.path.exists(self.checkpoint_path):
@@ -836,6 +854,7 @@ class CLabeled:
                 self.decay_time = self.default_decay_time if self.auto_play_flag else 0
             if key == ord('a') or key == ord('A') or key == 2424832:  # 后退一张
                 self._backward()
+                self.undo_boxes = []
                 continue
             if key == ord('w') or key == ord('W') or key == 2490368:
                 self.label_index = max(0, self.label_index - 1)
@@ -855,10 +874,12 @@ class CLabeled:
                 break
             if key == ord('d') or key == ord('D') or key == 2555904:  # 前进一张
                 self.current_label_index += 1
+                self.undo_boxes = []
                 continue
             # if key in [0, 16, 17, 20, 65505, 65513]:
             #     continue
             if self.auto_play_flag:
+                self.undo_boxes = []
                 self.current_label_index += 1
 
 
@@ -884,7 +905,8 @@ def parse_args():
     task.default_decay_time = int(cfgs.get("decay_time", 1000))
     task.pixel_size = int(cfgs.get("pixel_size", 1920))
     task.select_type = int(cfgs.get("select_type", 0))
-    task.checkpoint_path = os.path.join(dataset_path, cfgs.get("checkpoint_name", "checkpoint"))
+    task.checkpoint_path = os.path.join(
+        dataset_path, cfgs.get("checkpoint_name", "checkpoint"))
     return task
 
 
