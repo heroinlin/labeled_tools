@@ -1,0 +1,37 @@
+{
+    "windows_name": "Rippleinfo Video Labeled Tool",
+    "dataset_path": "./data",
+    "data_list1": "./data/test.csv",
+    "decay_time": 33,
+    "pixel_size": 704,
+    "select_type": 0,
+    "data_process_flag": 0,
+    "checkpoint_name": "checkpoint",
+    "total_class_names": [
+        "stand", "walk"
+    ],
+    "class_names": [
+        "stand", "walk"
+    ],
+    "colors": [
+      [ 96, 48, 178 ],
+      [ 118, 154, 254 ],
+      [ 0, 215, 255 ],
+      [ 50, 205, 50 ],
+      [ 128, 0, 128 ],
+      [ 236, 40, 160 ],
+      [ 247, 10, 255 ],
+      [ 42, 42, 165 ],
+      [ 10, 238, 118 ],
+      [ 222, 196, 176 ],
+      [ 255, 112, 132 ],
+      [ 106, 106, 255 ],
+      [ 144, 32, 208 ],
+      [ 148, 0, 211 ],
+      [ 205, 182, 141 ],
+      [ 255, 225, 255 ],
+      [ 54, 54, 54 ],
+      [ 181, 181, 181 ],
+      [ 238, 238, 209 ]
+    ]
+  }
