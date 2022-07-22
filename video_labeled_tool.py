@@ -84,6 +84,7 @@ class CLabeled:
         # 当前标注图片的索引号，也是已标注图片的数量
         self.current_label_index = 0
         self.current_frame_num = 0
+        self.total_frame_num = 0
         # 整个窗口图片，包含图片标注区域和按键区域
         self.win_image = None
         # 待标注图片
@@ -162,6 +163,8 @@ class CLabeled:
         self.fliter_attrs = {}
         # 属性开关
         self.attr_flag = True
+        self.traj_id_first_frame_dict = {}
+        self.current_traj_idx = 0
         # 是否有进行操作
         self.operate_flag = False
         # 数据处理开关
@@ -197,6 +200,8 @@ class CLabeled:
         self.class_idx = -1
         self.operate_flag = False
         self.boxes_dict = OrderedDict()
+        self.traj_id_first_frame_dict = {}
+        self.current_traj_idx = 0
 
     # 参数检查，确保代码可运行
     def _check(self):
@@ -387,7 +392,8 @@ class CLabeled:
             else:
                 self.label_index = min(select_mode, self.class_num - 1)
                 if self.label_index < (self.class_num - len(self.extends)):
-                    self.class_idx = self.label_index
+                    if not self.attr_type_idx:
+                        self.class_idx = self.label_index
                     self.operate_flag = True
                     # print("classify: ", self.operate_flag)
         x, y = self._roi_limit(x, y)
@@ -406,11 +412,10 @@ class CLabeled:
         elif self.class_names[self.label_index] == "mosaic":
             self.boxes = self.mosaic_boxes
             cv2.setMouseCallback(self.windows_name, self._draw_roi)
-            self.keyboard.press('m')
-            self.keyboard.release('M')
         elif self.class_names[self.label_index] == "person":
-            self.boxes = self.person_boxes[str(self.current_frame_num + 1)]
-            cv2.setMouseCallback(self.windows_name, self._draw_roi)
+            if not self.attr_type_idx:
+                self.boxes = self.person_boxes[str(self.current_frame_num + 1)]
+                cv2.setMouseCallback(self.windows_name, self._draw_roi)
             self.keyboard.press('p')
             self.keyboard.release('p')
         elif not self.attr_type_idx:
@@ -565,13 +570,19 @@ class CLabeled:
                     del self.undo_boxes[0]
                 self.undo_boxes.append(self.boxes.copy())
                 # label_idx = self.boxes[self.move_idx][4]
+                if self.attr_flag:
+                    attr_idxs = self.boxes[self.move_idx][4:4+
+                                                          len(self.attrs_dict)]
                 del self.boxes[self.move_idx]
                 x1, y1, x2, y2 = self._move_delta_limit(
                     x - ix, y - iy, move_box)
-                self.boxes.insert(self.move_idx, [
+                box = [
                     x1 / self.width, y1 / self.height, x2 / self.width,
                     y2 / self.height
-                ])
+                ]
+                if self.attr_flag:
+                    box.extend(attr_idxs)
+                self.boxes.insert(self.move_idx, box)
                 self._draw_box_on_image(self.image.copy(), self.boxes)
                 self.move_idx = -1
                 move_box = None
@@ -792,7 +803,8 @@ class CLabeled:
                     ]
                     box = self.box_fix(box)
                     box.extend([0] * len(self.attrs_dict))
-                    box[4 + max(self.attr_type_idx - 1, 0)] = self.label_index + 1
+                    # box[4 + max(self.attr_type_idx - 1, 0)] = self.label_index + 1
+                    box[4 + max(self.attr_type_idx - 1, 0)] = self.label_index
                     self.boxes.append(box)
             else:
                 cv2.circle(self.current_image, (x, y), 5, (0, 0, 255), -1)
@@ -818,9 +830,30 @@ class CLabeled:
                 change_box = self.boxes[change_idx].copy()
                 if self._point_in_box(x, y, change_box):
                     label_id = self.class_table[self.label_index]
-                    change_box[4 + max(self.attr_type_idx - 1, 0)] = label_id + 1
+                    if label_id <= (len(self.class_names) - len(self.extends)):
+                        if self.attr_type_idx:
+                            for frame_idx in range(self.current_frame_num + 1, self.total_frame_num):
+                                for box_idx in range(len(self.person_boxes[str(frame_idx + 1)])):
+                                    temp_traj_idx = change_box[4]
+                                    if self.person_boxes[str(frame_idx + 1)][box_idx][4] == temp_traj_idx:
+                                        self.person_boxes[str(frame_idx + 1)][box_idx][4 + self.attr_type_idx - 1] = label_id
+                    change_box[4 + max(self.attr_type_idx - 1, 0)] = label_id
                     self.boxes[change_idx] = change_box
                     self._draw_box_on_image(self.current_image, self.boxes)
+                    if self.class_names[label_id] == "person" and self.attr_type_idx:
+                        temp_traj_idx = change_box[4]
+                        for frame_idx in range(0, self.current_frame_num + 1):
+                            select_first_frame_status = 0
+                            for box_idx in range(len(self.person_boxes[str(frame_idx + 1)])):
+                                temp_traj_idx = change_box[4]
+                                if self.person_boxes[str(frame_idx + 1)][box_idx][4] == temp_traj_idx:
+                                    select_first_frame_status = 1
+                                if select_first_frame_status:
+                                    self.current_frame_num = frame_idx
+                                    self.keyboard.press('p')
+                                    self.keyboard.release('p')
+                                    print("first frame is : ", self.current_frame_num)
+                                    break
                 self.operate_flag = True
 
     # 将标注框显示到图像上
@@ -841,8 +874,8 @@ class CLabeled:
                 label_id = box[4 + max(self.attr_type_idx - 1, 0)]
             else:
                 label_id = 0
-            if self.attr_type_idx and label_id:
-                label_id -= 1
+            # if self.attr_type_idx and label_id:
+            #     label_id -= 1
             label_index = self.class_table.index(label_id)
             cv2.rectangle(blk, pt1, pt2, self.colors[label_index],
                           box_border)
@@ -874,8 +907,8 @@ class CLabeled:
             label_id = box[4 + max(self.attr_type_idx - 1, 0)]
         else:
             label_id = 0
-        if self.attr_type_idx and label_id:
-            label_id -= 1
+        # if self.attr_type_idx and label_id:
+        #     label_id -= 1
         label_index = self.class_table.index(label_id)
         cv2.rectangle(image, pt1, pt2, self.highlight_colors[0],
                       box_border * 4)
@@ -977,6 +1010,17 @@ class CLabeled:
                     min(font_size * 0.4, 1.0), (0, 255, 0), font_size)
         self.win_image[:, :self.width, :] = image
 
+    def _update_traj_id_first_frame_dict(self):
+        self.traj_id_first_frame_dict = {}
+        for key in self.person_boxes.keys():
+            for box in self.person_boxes[key]:
+                attrs = box[4:]
+                attrs.extend([0] * max((len(self.attrs_dict) - len(attrs)), 0))
+                if len(attrs) >= 1:
+                    traj_idx = attrs[0]
+                    if str(traj_idx) not in self.traj_id_first_frame_dict:
+                        self.traj_id_first_frame_dict.update({str(traj_idx): int(key) - 1})
+
     # 从文本读取标注框信息
     def read_label_file(self, label_file_path):
         json_file = open(label_file_path, "r", encoding="utf-8")
@@ -985,6 +1029,7 @@ class CLabeled:
         class_name = annotation_infos["class_name"]
         class_idx = annotation_infos["class_idx"]
         frame_num = annotation_infos["frame_num"]
+        fps = annotation_infos.get("fps", 25)
         person_boxes = annotation_infos.get("person_boxes", {})
         mosaic_boxes = annotation_infos.get("mosaic_boxes", [])
         file_attrs = annotation_infos.get("attrs", [])
@@ -994,25 +1039,43 @@ class CLabeled:
         self.class_idx = class_idx
         self.file_attrs = file_attrs
         attrs = []
+        path_file_name = os.path.splitext(label_file_path)[0]
+        version, class_name = path_file_name.replace("\\", "/").split("/")[-3:-1]
         for key in self.person_boxes.keys():
             boxes = []
             for box in self.person_boxes[key]:
                 attrs = box[4:]
                 bounding_box = box[0:4]
+                extra_attr_num = len(self.attrs_dict) - len(attrs)
                 attrs.extend([0] * max((len(self.attrs_dict)-len(attrs)), 0))
+                if len(attrs) >= 1:
+                    traj_idx = attrs[0]
+                    if str(traj_idx) not in self.traj_id_first_frame_dict:
+                        self.traj_id_first_frame_dict.update(
+                            {str(traj_idx): int(key) - 1})
+                if extra_attr_num >= 1 and len(self.person_boxes[key]) == 1:
+                    if self.src_total_class_names[
+                    if self.src_total_class_names[
+                            self.class_idx] in self.attrs_dict["action_type"]["person"]:
+                        attrs[3] = self.attrs_dict["action_type"]["person"].index(self.src_total_class_names[self.class_idx])
                 bounding_box.extend(attrs)
                 boxes.append(bounding_box)
             self.person_boxes[key] = boxes
+            # print(self.total_class_names)
+            # print(attrs)
+        if self.attr_type_idx and len(attrs):
+            self.label_index = attrs[self.attr_type_idx - 1]
         self.boxes = self.person_boxes.get("1", [])
 
     # 将标注框信息保存到文本
-    def write_label_file(self, label_file_path, total_frame_num):
+    def write_label_file(self, label_file_path, total_frame_num, fps):
         if not os.path.exists(os.path.dirname(label_file_path)):
             os.makedirs(os.path.dirname(label_file_path))
         annotation_infos = {}
-        annotation_infos["class_name"] = self.class_names[self.class_idx]
+        annotation_infos["class_name"] = self.src_total_class_names[self.class_idx]
         annotation_infos["class_idx"] = self.class_idx
         annotation_infos["frame_num"] = total_frame_num
+        annotation_infos["fps"] = fps
         annotation_infos["attrs"] = self.file_attrs
         # annotation_infos["boxes_dict"] = self.boxes_dict
         annotation_infos["mosaic_boxes"] = self.mosaic_boxes
@@ -1081,7 +1144,7 @@ class CLabeled:
             print(self.re_check_indexs)
         self._compute_total_video_number()
         print("需要标注的视频总数为： ", self.total_video_number)
-        
+
         video = cv2.VideoCapture()
         while self.current_label_index < self.total_video_number:
             print("已标注的视频数量为： ", self.current_label_index)
@@ -1092,13 +1155,17 @@ class CLabeled:
             self._reset()
             cv2.namedWindow(self.windows_name, 0)
             video_path = self.video_list[self.current_label_index]
+            if not os.path.exists(video_path):
+                video_path = video_path.replace(".mp4", ".flv")
             # print(self.videos_list[self.current_label_index])
             if not video.open(video_path):
                 print("视频打开失败: ", video_path)
+                self.current_label_index += 1
                 continue
 
             # 获取视频总帧数
             total_frame_number = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
+            self.total_frame_number = total_frame_number
             # 获取视频宽高
             video_width = int(video.get(cv2.CAP_PROP_FRAME_WIDTH))
             video_height = int(video.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -1112,9 +1179,10 @@ class CLabeled:
                 self.label_index = self.class_names.index(class_name)
             self.label_path = path_file_name.replace(version, version + "_labels") + ".json"
             self.attr_path = path_file_name.replace(class_name, "Attributes") + ".json"
-            self.file_attrs = self._get_file_attr(self.attr_path)
             if os.path.exists(self.label_path):
                 self.read_label_file(self.label_path)
+                if not len(self.file_attrs):
+                    self.file_attrs = self._get_file_attr(self.attr_path)
                 if not len(self.person_boxes):
                     for frame_idx in range(total_frame_number):
                         self.person_boxes.update({str(frame_idx + 1):[]})
@@ -1141,12 +1209,15 @@ class CLabeled:
 
                 self.width = self.image.shape[1]
                 self.height = self.image.shape[0]
-                self.class_width = self.width // 5
-                self.extend_show_str = f"{current_frame_num}/{total_frame_number}"
+                self.class_width = self.width // 4
+                self.extend_show_str = f"{current_frame_num}/{total_frame_number}   {self.current_traj_idx}/{len(self.traj_id_first_frame_dict)}"
                 self.current_frame_num = current_frame_num
                 # cv2.imshow(self.windows_name, self.image)
-                if self.person_boxes is not None:
+                if self.person_boxes is not None and len(self.person_boxes):
                     self.boxes = self.person_boxes.get(str(current_frame_num + 1), [])
+                # self.current_label_index += 1
+                # self.undo_boxes = []
+                # break
                 self._draw_box_on_image(self.image.copy(), self.boxes)
                 if self.class_names[self.label_index] == "move":
                     cv2.setMouseCallback(self.windows_name, self._move_roi)
@@ -1159,7 +1230,7 @@ class CLabeled:
                 elif self.class_names[self.label_index] == "mosaic":
                     self.boxes = self.mosaic_boxes
                     cv2.setMouseCallback(self.windows_name, self._draw_roi)
-                elif self.class_names[self.label_index] == "person":
+                elif self.class_names[self.label_index] == "person" and not self.attr_type_idx:
                     self.boxes = self.person_boxes[str(current_frame_num + 1)]
                     cv2.setMouseCallback(self.windows_name, self._draw_roi)
                 elif self.attr_type_idx:
@@ -1176,11 +1247,13 @@ class CLabeled:
 
                 if 48 < key <= 57:  # 按键 0-9
                     self.label_index = min(key - 49, self.class_num - 1)
-                    self.class_idx = self.label_index
+                    if not self.attr_type_idx:
+                        self.class_idx = self.label_index
                     continue
                 if key == 48:  # 按键 0
                     self.label_index = min(9, self.class_num - 1)
-                    self.class_idx = self.label_index
+                    if not self.attr_type_idx:
+                        self.class_idx = self.label_index
                     continue
                 if key == 8:  # Backspace
                     self.label_index = self.class_names.index("undo")
@@ -1194,17 +1267,40 @@ class CLabeled:
                 if key == 92 or key == 47:  # 按键 \|
                     self.label_index = self.class_names.index("fix")
                     continue
+                if key == ord('g') or key == ord('G'):  # 按键 g
+                    self._update_traj_id_first_frame_dict()
+                    print("debug: ", self.traj_id_first_frame_dict)
+                    traj_idx_list = list(self.traj_id_first_frame_dict.keys())
+                    self.current_traj_idx = max(self.current_traj_idx - 1, 1)
+                    self.extend_show_str = f"{current_frame_num}/{total_frame_number}   {self.current_traj_idx}/{len(self.traj_id_first_frame_dict)}"
+                    if len(traj_idx_list):
+                        current_frame_num = int(self.traj_id_first_frame_dict[traj_idx_list[self.current_traj_idx-1]])
+                        # print(self.current_traj_idx)
+                        video.set(cv2.CAP_PROP_POS_FRAMES, current_frame_num)
+                        _, self.frame = video.read()
+                    continue
+                if key == ord('h') or key == ord('H'):  # 按键 h
+                    self._update_traj_id_first_frame_dict()
+                    print("debug: ", self.traj_id_first_frame_dict)
+                    traj_idx_list = list(self.traj_id_first_frame_dict.keys())
+                    self.current_traj_idx = min(self.current_traj_idx + 1,
+                                                len(traj_idx_list))
+                    self.extend_show_str = f"{current_frame_num}/{total_frame_number}   {self.current_traj_idx}/{len(self.traj_id_first_frame_dict)}"
+                    if len(traj_idx_list):
+                        current_frame_num = int(self.traj_id_first_frame_dict[traj_idx_list[self.current_traj_idx-1]])
+                        # print(self.current_traj_idx)
+                        video.set(cv2.CAP_PROP_POS_FRAMES, current_frame_num)
+                        _, self.frame = video.read()
+                    continue
                 if key == ord('m') or key == ord('M'):  # 按键 m
                     self.label_index = self.class_names.index("mosaic")
                     continue
                 if key == ord('p') or key == ord('P'):  # 按键 p
                     self.label_index = self.class_names.index("person")
                     if self.attr_type_idx:
-                        for frame_idx in range(current_frame_num + 1, total_frame_number):
-                            for cur_box_idx in range(len(self.person_boxes[str(current_frame_num + 1)])):
-                                for box_idx in range(len(self.person_boxes[str(frame_idx + 1)])):
-                                    if self.person_boxes[str(frame_idx + 1)][box_idx][4] == self.person_boxes[str(current_frame_num + 1)][cur_box_idx][4]:
-                                        self.person_boxes[str(frame_idx + 1)][box_idx][5:] = self.person_boxes[str(current_frame_num + 1)][cur_box_idx][5:].copy()
+                        current_frame_num = self.current_frame_num
+                        video.set(cv2.CAP_PROP_POS_FRAMES, current_frame_num)
+                        _, self.frame = video.read()
                     continue
                 if key == 32:
                     self.auto_play_flag = not self.auto_play_flag
@@ -1220,13 +1316,15 @@ class CLabeled:
                 if key == ord('w') or key == ord('W') or key == 2490368:
                     self.label_index = max(0, self.label_index - 1)
                     if self.label_index < (self.class_num - len(self.extends)):
-                        self.class_idx = self.label_index
+                        if not self.attr_type_idx:
+                            self.class_idx = self.label_index
                     continue
                 if key == ord('s') or key == ord('S') or key == 2621440:
                     self.label_index = min(self.class_num - 1,
                                         self.label_index + 1)
                     if self.label_index < (self.class_num - len(self.extends)):
-                        self.class_idx = self.label_index
+                        if not self.attr_type_idx:
+                            self.class_idx = self.label_index
                     continue
                 if self.attr_flag and key == ord('z') or key == ord('Z'):  # 向后切换属性表
                     self.attr_type_idx = (self.attr_type_idx -
@@ -1268,6 +1366,11 @@ class CLabeled:
                     # if len(self.boxes_dict.get(str(current_frame_num))):
                     #     self.boxes = self.person_boxes.get(str(current_frame_num), [])
                     continue
+                if key == ord('v') or key == ord('V'):  # 归零
+                    current_frame_num = 0
+                    video.set(cv2.CAP_PROP_POS_FRAMES, current_frame_num)
+                    _, self.frame = video.read()
+                    continue
                 # if key in [0, 16, 17, 20, 65505, 65513]:
                 #     continue
                 if key == ord('n') or key == ord('N'):
@@ -1285,7 +1388,7 @@ class CLabeled:
                         _, self.frame = video.read()
                         current_frame_num += 1
             if self.operate_flag or self.data_process_flag:
-                self.write_label_file(self.label_path, total_frame_number)
+                self.write_label_file(self.label_path, total_frame_number, fps)
 
     # 根据提供的类别名筛选指定样本， 写入csv文件
     def filter_class_name(self):
@@ -1306,9 +1409,9 @@ class CLabeled:
             self.label_path = path_file_name.replace(version, version + "_labels") + ".json"
             if os.path.exists(self.label_path):
                 self.read_label_file(self.label_path)
-            class_name = self.src_total_class_names[self.class_idx]
+                class_name = self.src_total_class_names[self.class_idx]
             if class_name in self.class_names:
-                video_path = video_path.replace("\\\\192.168.1.177/aigroup", "home")
+                video_path = video_path.replace("\\\\192.168.1.177/aigroup", "/home")
                 filter_class_name_file.writelines(video_path + "\n")
             self.current_label_index += 1
         filter_class_name_file.close()
@@ -1342,6 +1445,43 @@ class CLabeled:
         filter_attr_info_file.close()
 
 
+    def fix_class_idx(self):
+        with open(self.data_list_path, "r") as f:
+            self.video_list = f.readlines(())
+        self._compute_total_video_number()
+        print("需要筛查的视频总数为： ", self.total_video_number)
+        filter_class_name_list_path = os.path.splitext(
+            self.data_list_path)[0] + "_fix.csv"
+        filter_class_name_file = open(filter_class_name_list_path, "w")
+        while self.current_label_index < self.total_video_number:
+            print("已过滤的视频数量为： ", self.current_label_index)
+            self.current_label_index = min(self.current_label_index,
+                                           self.total_video_number - 1)
+            video_path, class_idx, frame_num = self.video_list[self.current_label_index].strip().split(" ")
+            # print(self.videos_list[self.current_label_index])
+            fix_video_path = video_path.replace("/home", "\\\\192.168.1.177/aigroup")
+            if not os.path.exists(fix_video_path):
+                fix_video_path = fix_video_path.replace(".mp4", ".flv")
+            path_file_name = os.path.splitext(video_path)[0]
+            version, class_name = path_file_name.replace("\\",
+                                                         "/").split("/")[-3:-1]
+            # 根据json标注筛选指定类别
+            self.label_path = path_file_name.replace(
+                version, version + "_labels") + ".json"
+            self.current_label_index += 1
+            if os.path.exists(self.label_path):
+                self.read_label_file(self.label_path)
+                class_name = self.src_total_class_names[self.class_idx]
+                class_idx = self.class_idx
+                if class_name in["sit_on_chair"]:
+                    class_idx = 16
+                if class_name in["side_video", "mix"]:
+                    continue
+            for class_name in self.class_names:
+                filter_class_name_file.writelines(f"{video_path} {class_idx} {frame_num}\n")
+        filter_class_name_file.close()
+
+
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('-c',
@@ -1369,6 +1509,7 @@ def parse_args():
     task.data_process_flag = int(cfgs.get("data_process_flag", 0))
     task.pixel_size = int(cfgs.get("pixel_size", 1920))
     task.select_type = int(cfgs.get("select_type", 0))
+    task.annotation_flag = int(cfgs.get("annotation_flag", 1))
     task.attrs_dict = cfgs.get("attrs", {})
     task.fliter_attrs = cfgs.get("fliter_attrs", {})
     task.checkpoint_path = os.path.join(
@@ -1378,9 +1519,13 @@ def parse_args():
 
 def main():
     task = parse_args()
-    task.labeled()
-    # task.filter_class_name()
-    # filter_attr_name()
+    if task.annotation_flag:
+        task.labeled()
+    elif len(task.fliter_attrs):
+        task.filter_attr_name()
+    else:
+        # task.filter_class_name()
+        task.fix_class_idx()
 
 
 if __name__ == '__main__':

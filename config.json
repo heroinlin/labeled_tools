@@ -6,6 +6,8 @@
     "pixel_size": 704,
     "select_type": 0,
     "data_process_flag": 0,
+    "annotation_flag": 1,
+    "save_frame_dir": "./data/cut_frame",
     "checkpoint_name": "checkpoint",
     "total_class_names": [
         "stand", "walk"
@@ -33,5 +35,18 @@
       [ 54, 54, 54 ],
       [ 181, 181, 181 ],
       [ 238, 238, 209 ]
-    ]
+    ],
+    "attrs":
+    {
+      "traj_id": {"person": ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]},
+      "object_type": {"person": ["adult", "kid", "old"]},
+      "place_type": {"person": ["indoor", "outdoor"]},
+      "action_type": {"person": ["stand", "walk"]}
+    },
+    "fliter_attrs": [
+      {
+        "key": "时间年",
+        "val": "2022"
+      
+      }]
   }
